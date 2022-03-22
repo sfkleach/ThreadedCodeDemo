@@ -103,10 +103,10 @@ public:
         instructions = {
             { '+', &&ADD },
             { '-', &&SUB },
-            { '<', &&DOWN },
-            { '>', &&UP },
-            { '[', &&LEFT },
-            { ']', &&RIGHT },
+            { '<', &&LEFT },
+            { '>', &&RIGHT },
+            { '[', &&OPEN },
+            { ']', &&CLOSE },
             { '.', &&PUT },
             { '\0', &&HALT }
         };
@@ -132,12 +132,12 @@ public:
         if ( DEBUG ) std::cout << "SUB" << std::endl;
         *loc -= 1;
         goto *(pc++->opcode);
-    UP:
-        if ( DEBUG ) std::cout << "UP" << std::endl;
+    RIGHT:
+        if ( DEBUG ) std::cout << "RIGHT" << std::endl;
         loc += 1;
         goto *(pc++->opcode);
-    DOWN:
-        if ( DEBUG ) std::cout << "DOWN" << std::endl;
+    LEFT:
+        if ( DEBUG ) std::cout << "LEFT" << std::endl;
         loc -= 1;
         goto *(pc++->opcode);
     PUT:
@@ -147,8 +147,8 @@ public:
             std::cout << i;
         }
         goto *(pc++->opcode);
-    LEFT:
-        if ( DEBUG ) std::cout << "LEFT" << std::endl;
+    OPEN:
+        if ( DEBUG ) std::cout << "OPEN" << std::endl;
         {
             int n = pc++->operand;
             if ( *loc == 0 ) {
@@ -156,8 +156,8 @@ public:
             }
             goto *(pc++->opcode);
         }
-    RIGHT:
-        if ( DEBUG ) std::cout << "RIGHT" << std::endl;
+    CLOSE:
+        if ( DEBUG ) std::cout << "CLOSE" << std::endl;
         {
             int n = pc++->operand;
             if ( *loc != 0 ) {
