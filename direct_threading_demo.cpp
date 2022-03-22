@@ -31,22 +31,22 @@ typedef void * OpCode;
 typedef union {
     OpCode opcode;
     int operand;
-} instruction;
+} Instruction;
 
 //  This class is responsible for translating the stream of source code
-//  into a vector<instruction>. It is passed a mapping from characters
+//  into a vector<Instruction>. It is passed a mapping from characters
 //  to the addresses-of-labels, so it can plant (aka append) the exact
 //  pointer to the implementing code. 
 class CodePlanter {
     std::ifstream input;                //  The source code to be read in.
-    const std::map<char, OpCode> & instructions;
-    std::vector<instruction> & program; 
+    const std::map<char, OpCode> & opcode_map;
+    std::vector<Instruction> & program; 
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
 
 public:
-    CodePlanter( std::string_view filename, const std::map<char, OpCode> & instructions, std::vector<instruction> & program ) :
+    CodePlanter( std::string_view filename, const std::map<char, OpCode> & opcode_map, std::vector<Instruction> & program ) :
         input( filename.data(), std::ios::in ),
-        instructions( instructions ),
+        opcode_map( opcode_map ),
         program( program )
     {}
 
@@ -54,8 +54,8 @@ private:
     void plantChar( char ch ) {
         //  Guard - skip characters that do not correspond to abstract machine
         //  operations.
-        auto it = instructions.find(ch);
-        if ( it == instructions.end() ) return;
+        auto it = opcode_map.find(ch);
+        if ( it == opcode_map.end() ) return;
 
         //  Body
         program.push_back( { it->second } );
@@ -64,12 +64,12 @@ private:
         //  fairly easily.
         if ( ch == '[' ) {
             indexes.push_back( program.size() );
-            program.push_back( {nullptr} );
+            program.push_back( {nullptr} );         //  Dummy value, will be overwritten.
         } else if ( ch == ']' ) {
             int end = program.size();
             int start = indexes.back();
             indexes.pop_back();
-            program[ start ].operand = end + 1;
+            program[ start ].operand = end + 1;     //  Overwrite the dummy value.
             program.push_back( { .operand={ start + 1 } } );
         }
     }
@@ -81,15 +81,15 @@ public:
             break_unless( input.good() );
             plantChar( ch );
         }
-        program.push_back( { instructions.at('\0') } );
+        program.push_back( { opcode_map.at('\0') } );
     }
 };
 
 typedef unsigned char num;
 
 class Engine {
-    std::map<char, OpCode> instructions;
-    std::vector<instruction> program;
+    std::map<char, OpCode> opcode_map;
+    std::vector<Instruction> program;
     std::vector<num> memory;
 public:
     Engine() : 
@@ -100,7 +100,7 @@ public:
     void runFile( std::string_view filename ) {
         std::cout << "# Executing: " << filename << std::endl;
 
-        instructions = {
+        opcode_map = {
             { '+', &&ADD },
             { '-', &&SUB },
             { '<', &&LEFT },
@@ -111,11 +111,11 @@ public:
             { '\0', &&HALT }
         };
         
-        CodePlanter planter( filename, instructions, program );
+        CodePlanter planter( filename, opcode_map, program );
         planter.plantProgram();
 
         auto program_data = program.data();
-        instruction * pc = &program_data[0];
+        Instruction * pc = &program_data[0];
         num * loc = &memory.data()[0];
         goto *(pc++->opcode);
 
