@@ -19,8 +19,15 @@ method (Engine::runFile) fit on a single screen.
 #include <map>
 
 #define DEBUG 0
+
+//  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
 #define break_unless( E ) if (!(E)) break
+
+//  Syntactic sugar to emphasise the 'return'. Usage:
+//      return_if( E );
+//      return_if( E )( Result )
+#define return_if( E ) if (E) return
 
 //  We use the address of a label to play the role of an operation-code.
 typedef void * OpCode;
@@ -55,7 +62,7 @@ private:
         //  Guard - skip characters that do not correspond to abstract machine
         //  operations.
         auto it = opcode_map.find(ch);
-        if ( it == opcode_map.end() ) return;
+        return_if( it == opcode_map.end() );
 
         //  Body
         program.push_back( { it->second } );
