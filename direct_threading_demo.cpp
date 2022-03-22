@@ -18,6 +18,7 @@ method (Engine::runFile) fit on a single screen.
 #include <fstream>
 #include <map>
 
+//  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
 
 //  Syntactic sugar to emphasise the 'break'.
