@@ -109,8 +109,8 @@ public:
         std::cout << "# Executing: " << filename << std::endl;
 
         opcode_map = {
-            { '+', &&ADD },
-            { '-', &&SUB },
+            { '+', &&INCR },
+            { '-', &&DECR },
             { '<', &&LEFT },
             { '>', &&RIGHT },
             { '[', &&OPEN },
@@ -135,12 +135,12 @@ public:
         //  Instructions are listed below.
         ////////////////////////////////////////////////////////////////////////
 
-    ADD:
-        if ( DEBUG ) std::cout << "ADD" << std::endl;
+    INCR:
+        if ( DEBUG ) std::cout << "INCR" << std::endl;
         *loc += 1;
         goto *(pc++->opcode);
-    SUB:
-        if ( DEBUG ) std::cout << "SUB" << std::endl;
+    DECR:
+        if ( DEBUG ) std::cout << "DECR" << std::endl;
         *loc -= 1;
         goto *(pc++->opcode);
     RIGHT:
