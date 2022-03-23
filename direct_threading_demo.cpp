@@ -105,8 +105,10 @@ public:
     {}
 
 public:
-    void runFile( std::string_view filename ) {
-        std::cout << "# Executing: " << filename << std::endl;
+    void runFile( std::string_view filename, bool header_needed ) {
+        if ( header_needed ) {
+            std::cerr << "# Executing: " << filename << std::endl;
+        }
 
         opcode_map = {
             { '+', &&INCR },
@@ -187,8 +189,7 @@ public:
             goto *(pc++->opcode);
         }
     HALT:
-        if ( DEBUG ) std::cout << "DONE!";
-        std::cout << std::endl;
+        if ( DEBUG ) std::cout << "DONE!" << std::endl;
         return;
     }
 };
@@ -201,7 +202,7 @@ int main( int argc, char * argv[] ) {
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (auto arg : args) {
         Engine engine;
-        engine.runFile( arg );
+        engine.runFile( arg, args.size() > 1 );
     }
     exit( EXIT_SUCCESS );
 }
