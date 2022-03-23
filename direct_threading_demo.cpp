@@ -116,11 +116,14 @@ public:
             { '[', &&OPEN },
             { ']', &&CLOSE },
             { '.', &&PUT },
+            { ',', &&GET },
             { '\0', &&HALT }
         };
         
         CodePlanter planter( filename, opcode_map, program );
         planter.plantProgram();
+
+        std::noskipws( std::cin );
 
         auto program_data = program.data();
         Instruction * pc = &program_data[0];
@@ -153,6 +156,16 @@ public:
         {
             num i = *loc;
             std::cout << i;
+        }
+        goto *(pc++->opcode);
+    GET:
+        if ( DEBUG ) std::cout << "GET" << std::endl;
+        {
+            char ch;
+            std::cin.get( ch );
+            if (std::cin.good()) {
+                *loc = ch;
+            }
         }
         goto *(pc++->opcode);
     OPEN:
