@@ -20,15 +20,15 @@ CC=g++
 CCFLAGS=-Wall -g -Og -std=c++17
 
 .PHONY: all
-all: direct_threading_demo
+all: direct_threading_demo subroutine_threading_demo
 
 .PHONY: clean
 clean:
-	rm -f direct_threading_demo
+	rm -f direct_threading_demo subroutine_threading_demo
 
 direct_threading_demo: direct_threading_demo.cpp
 	$(CC) $(CCFLAGS) -o $@ $^
 
-
-
+subroutine_threading_demo: subroutine_threading_demo.cpp
+	$(CC) $(CCFLAGS) -o $@ $^
 
