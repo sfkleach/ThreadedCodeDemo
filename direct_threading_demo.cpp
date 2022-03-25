@@ -52,7 +52,11 @@ class CodePlanter {
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
 
 public:
-    CodePlanter( std::string_view filename, const std::map<char, OpCode> & opcode_map, std::vector<Instruction> & program ) :
+    CodePlanter( 
+        std::string_view filename, 
+        const std::map<char, OpCode> & opcode_map, 
+        std::vector<Instruction> & program 
+    ) :
         input( filename.data(), std::ios::in ),
         opcode_map( opcode_map ),
         program( program )
