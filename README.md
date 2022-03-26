@@ -9,11 +9,11 @@ I include a direct-threaded implementation in C++, exploiting the unique jump-to
 Based on my previous experiments, I was pretty confident this would have performance quite close to the 
 baseline, which appears to be the case. 
 
-And then I include a subroutine-threaded implementation in C++ and also in Rust. I crudey benchmark the 
+And then I include a subroutine-threaded implementation in C++ and also in Rust. I crudely benchmark the 
 performance of these using the `bsort.bf` program. This came from the fabulous brainfluff site and was
-written by Daniel Cristofani. It performs a bubble-sort on its input, which is gratifyingly expensive, 
-and makes running timing tests easy and giving stable results. Also, the overheads of the I/O do not 
-dominate.
+written by Daniel Cristofani (licensed under Creative Commons). It performs a bubble-sort on its input, 
+which is gratifyingly expensive, and makes running timing tests easy and giving stable results. Also, 
+the overheads of the I/O do not dominate.
 
 The baseline is provided by bsort.c, which is a direct-to-C implementation of `bsort.bf`. Rather neatly
 I generated this from the `bsort.bf` code using `dbf2c.bf`, another of Daniel's incredible programs, which 
