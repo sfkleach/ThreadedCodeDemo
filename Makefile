@@ -22,6 +22,10 @@ CCFLAGS=-Wall -g -Og -std=c++17
 .PHONY: all
 all: direct_threading_demo subroutine_threading_demo
 
+.PHONY: release
+release: CCFLAGS=-Wall -O3 -std=c++17
+release: direct_threading_demo subroutine_threading_demo
+
 .PHONY: clean
 clean:
 	rm -f direct_threading_demo subroutine_threading_demo
