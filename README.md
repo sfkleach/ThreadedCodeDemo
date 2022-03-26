@@ -38,8 +38,10 @@ myself to portable implementations. If anyone knows, drop me a line :)
 The C++, Rust and Makefile programs are licensed under the GPL 3.0, which is included as part of this archive. 
 Two files are specifically not covered by this license and must be additionally attributed.
 
-The programs `bsort.bf` and `dbf2c.bf` are copyright (c) 2016 by Daniel Cristofani and included in this archive
+The programs `head.bf`, `bsort.bf` and `dbf2c.bf` are copyright (c) 2016 by Daniel Cristofani and included in this archive
 for convenience only. They are licensed under 
 [a Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/). 
+I have changed the file-extension used from `.b` to `.bf` to avoid naming clashes.
 
-
+The program `hello.bf` appears on many web sites, including Wikipedia, without attribution and at this point I 
+believe it is in the public domain.
