@@ -33,3 +33,13 @@ seen various comments that researchers find very little difference between direc
 However I have never duplicated that - I wonder if the difference comes from the fact that I am restricting 
 myself to portable implementations. If anyone knows, drop me a line :)
 
+# Licenses
+
+The C++, Rust and Makefile programs are licensed under the GPL 3.0, which is included as part of this archive. 
+Two files are specifically not covered by this license and must be additionally attributed.
+
+The programs `bsort.bf` and `dbf2c.bf` are copyright (c) 2016 by Daniel Cristofani and included in this archive
+for convenience only. They are licensed under 
+[a Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/). 
+
+
