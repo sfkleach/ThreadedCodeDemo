@@ -20,10 +20,11 @@ method (Engine::runFile) fit on a single screen.
 #include <optional>
 #include <stdexcept>
 #include <deque>
+#include <cstdlib>
 
 //  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
-#define OPTIMISE 0
+#define DUMP 0
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -35,8 +36,17 @@ method (Engine::runFile) fit on a single screen.
 #define return_if( E ) if (E) return
 #define return_unless( E ) if (!(E)) return
 
+template <typename T> int sgn(T val) {
+    return (T(0) < val) - (val < T(0));
+};
+
 //  We use the address of a label to play the role of an operation-code.
 typedef void * OpCode;
+
+typedef struct Dyad {
+    int operand1;
+    int operand2;
+} Dyad;
 
 //  The instruction stream is mainly OpCodes but there are some
 //  integer arguments interspersed. Strictly speaking this makes this
@@ -44,6 +54,7 @@ typedef void * OpCode;
 typedef union {
     OpCode opcode;
     int operand;
+    Dyad dyad;
 } Instruction;
 
 class PeekableProgramInput {
@@ -132,12 +143,12 @@ public:
     }
 };
 
-struct MoveIncrMove {
+struct MoveAddMove {
     int lhs;
     int by;
     int rhs;
 public:
-    MoveIncrMove( int lhs, int by, int rhs ) {
+    MoveAddMove( int lhs, int by, int rhs ) {
         this->lhs = lhs;
         this->by = by;
         this->rhs = rhs;
@@ -148,6 +159,22 @@ public:
     }
 };
 
+typedef struct InstructionSet {
+    OpCode SET_ZERO;
+    OpCode INCR;
+    OpCode DECR;
+    OpCode ADD;
+    OpCode ADD_OFFSET;
+    OpCode LEFT;
+    OpCode RIGHT;
+    OpCode MOVE;
+    OpCode OPEN;
+    OpCode CLOSE;
+    OpCode GET;
+    OpCode PUT;
+    OpCode HALT;
+} InstructionSet;
+
 //  This class is responsible for translating the stream of source code
 //  into a vector<Instruction>. It is passed a mapping from characters
 //  to the addresses-of-labels, so it can plant (aka append) the exact
@@ -156,6 +183,7 @@ class CodePlanter {
     PeekableProgramInput input;         //  The source code to be read in, stripped of comment characters.
     const std::map<char, OpCode> & opcode_map;
     const std::map<std::string, OpCode> extra_opcodes_map;
+    const InstructionSet & instruction_set;
     std::vector<Instruction> & program; 
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
 
@@ -164,17 +192,20 @@ public:
         std::string_view filename, 
         const std::map<char, OpCode> & opcode_map, 
         std::map<std::string, OpCode> extra_opcodes_map,
+        const InstructionSet & instruction_set,
         std::vector<Instruction> & program 
     ) :
         input( filename.data() ),
         opcode_map( opcode_map ),
         extra_opcodes_map( extra_opcodes_map ),
+        instruction_set( instruction_set ), 
         program( program )
     {}
 
 private:
     void plantOpen() {
         program.push_back( { opcode_map.at( '[' ) } );
+        if ( DUMP ) std::cerr << "OPEN" << std::endl;
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
@@ -183,6 +214,7 @@ private:
     }
 
     void plantClose() {
+        if ( DUMP ) std::cerr << "CLOSE" << std::endl;
         program.push_back( { opcode_map.at( ']' ) } );
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
@@ -195,57 +227,44 @@ private:
     }
 
     void plantPut() {
+        if ( DUMP ) std::cerr << "PUT" << std::endl;
         program.push_back( { opcode_map.at( '.' ) } );
     }
 
     void plantGet() {
+        if ( DUMP ) std::cerr << "GET" << std::endl;
         program.push_back( { opcode_map.at( ',' ) } );
     }
 
     void plantMoveBy( int n ) {
         if ( n == 1 ) {
+            if ( DUMP ) std::cerr << "RIGHT" << std::endl;
             program.push_back( { opcode_map.at( '>' ) } );
         } else if ( n == -1 ) {
+            if ( DUMP ) std::cerr << "LEFT" << std::endl;
             program.push_back( { opcode_map.at( '<' ) } );
         } else if ( n != 0 ) {
-            if (true) {
-                program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
-                program.push_back( { .operand=n } );
-            } else if ( n > 0 ) {
-                for (int i = 0; i < n; i++ ) {
-                    program.push_back( { opcode_map.at( '>' ) } );
-                }
-            } else if ( n < 0 ) {
-                for (int i = 0; i < -n; i++ ) {
-                    program.push_back( { opcode_map.at( '<' ) } );
-                }
-            }
+            if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
+            program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
+            program.push_back( { .operand=n } );
         }
     }
 
-    void plantIncrBy( int n ) {
+    void plantAdd( int n ) {
         if ( n == 1 ) {
+            if ( DUMP ) std::cerr << "INCR" << std::endl;
             program.push_back( { opcode_map.at( '+' ) } );
         } else if ( n == -1 ) {
+            if ( DUMP ) std::cerr << "DECR" << std::endl;
             program.push_back( { opcode_map.at( '-' ) } );
         } else if ( n != 0 ) {
-            if (true) {
-                program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
-                program.push_back( { .operand=n } );
-            } else if ( n > 0 ) {
-                for (int i = 0; i < n; i++ ) {
-                    program.push_back( { opcode_map.at( '+' ) } );
-                }
-            } else if ( n < 0 ) {
-                for (int i = 0; i < -n; i++ ) {
-                    program.push_back( { opcode_map.at( '-' ) } );
-                }
-            }
+            if ( DUMP ) std::cerr << "ADD " << n << std::endl;
+            program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
+            program.push_back( { .operand=n } );
         }
     }
 
-    int scanIncrBy( int n ) {
-        // if (!OPTIMISE) return n;
+    int scanAdd( int n ) {
         for (;;) {
             if ( input.tryPop( '+' ) ) {
                 n += 1;
@@ -259,7 +278,6 @@ private:
     }
 
     int scanMoveBy( int n ) {
-        // if (!OPTIMISE) return n;
         for (;;) {
             if ( input.tryPop( '>' ) ) {
                 n += 1;
@@ -272,21 +290,58 @@ private:
         return n;
     }
 
-    void plantMoveIncrMove( const MoveIncrMove & mim ) {
-        plantMoveBy( mim.lhs );
-        plantIncrBy( mim.by );
-        plantMoveBy( mim.rhs );
+    void plantAddOffset( int offset, int by ) {
+        if ( DUMP ) std::cerr << "ADD offset=" << offset << " by=" << by << std::endl;
+        program.push_back( { extra_opcodes_map.at( "ADD_OFFSET" ) } );
+        struct Dyad d = { .operand1=offset, .operand2=by };
+        program.push_back( { .dyad=d } );
+    }
+
+    void plantMoveAddMove( const MoveAddMove & mim ) {
+        if ( mim.by == 0 ) {
+            if ( mim.rhs == 0 ) {
+                plantMoveBy( mim.lhs );
+            } else if ( mim.lhs == 0 ) {
+                const MoveAddMove nextmam = scanMoveIncrMove( mim.rhs );
+                plantMoveAddMove( nextmam );
+            } else {
+                const MoveAddMove nextmam = scanMoveIncrMove( mim.lhs + mim.rhs );
+                plantMoveAddMove( nextmam );
+            }
+        } else if (
+            ( mim.lhs != 0 && mim.rhs != 0 ) &&     
+            ( sgn( mim.lhs ) != sgn( mim.rhs ) ) //  And they have opposite signs
+        ) {
+            int abs_lhs = abs( mim.lhs ); 
+            int abs_rhs = abs( mim.rhs );
+            if ( abs_lhs == abs_rhs ) {
+                plantAddOffset( mim.lhs, mim.by );
+            } else if ( abs_lhs > abs_rhs ) {
+                plantMoveBy( sgn( mim.lhs ) * ( abs_lhs - abs_rhs ) );
+                plantAddOffset( sgn( mim.lhs ) * abs_rhs, mim.by );
+            } else /* if ( abs_lhs < abs_rhs ) */ {
+                plantAddOffset( mim.lhs, mim.by );
+                const MoveAddMove nextmam = scanMoveIncrMove( sgn( mim.rhs ) * ( abs_rhs - abs_lhs ) );
+                plantMoveAddMove( nextmam );
+           }
+        } else {
+            plantMoveBy( mim.lhs );
+            plantAdd( mim.by );
+            const MoveAddMove nextmam = scanMoveIncrMove( mim.rhs );
+            plantMoveAddMove( nextmam );
+        }
     }
 
     void plantSetZero() {
+        if ( DUMP ) std::cerr << "SET_ZERO" << std::endl;
         program.push_back( { extra_opcodes_map.at( "SET_ZERO" ) } );
     }
 
-    MoveIncrMove scanMoveIncrMove( int initial ) {
+    MoveAddMove scanMoveIncrMove( int initial ) {
         int move_lhs = scanMoveBy( initial );
-        int n = scanIncrBy( 0 );
+        int n = scanAdd( 0 );
         int move_rhs = scanMoveBy( 0 );   
-        return MoveIncrMove( move_lhs, n, move_rhs );
+        return MoveAddMove( move_lhs, n, move_rhs );
     }
 
     bool plantExpr() {
@@ -295,28 +350,27 @@ private:
 
         switch ( *ch ) {
             case '+':
-                plantIncrBy( scanIncrBy( 1 ) );
+                plantAdd( scanAdd( 1 ) );
                 break;
             case '-':
-                plantIncrBy( scanIncrBy( -1 ) );
+                plantAdd( scanAdd( -1 ) );
                 break;
             case '>':
             case '<':
                 {
-                    MoveIncrMove mim = scanMoveIncrMove( ch == '>' ? 1 : -1 );
-                    plantMoveIncrMove( mim );
+                    MoveAddMove mim = scanMoveIncrMove( ch == '>' ? 1 : -1 );
+                    plantMoveAddMove( mim );
                 }
                 break;
             case '[':
                 {
-                    MoveIncrMove mim = scanMoveIncrMove( 0 );
+                    MoveAddMove mim = scanMoveIncrMove( 0 );
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
                     if ( bump && input.tryPop( ']' ) ) {
-                        std::cerr << "ZERO" << std::endl;
                         plantSetZero();
                     } else {
                         plantOpen();
-                        plantMoveIncrMove( mim );
+                        plantMoveAddMove( mim );
                     }   
                 }
                 break;
@@ -358,6 +412,19 @@ public:
             std::cerr << "# Executing: " << filename << std::endl;
         }
 
+        InstructionSet instruction_set;
+        instruction_set.INCR = &&INCR;
+        instruction_set.DECR = &&DECR;
+        instruction_set.LEFT = &&LEFT;
+        instruction_set.RIGHT = &&RIGHT;
+        instruction_set.OPEN = &&OPEN;
+        instruction_set.CLOSE = &&CLOSE;
+        instruction_set.ADD = &&INCR_BY;
+        instruction_set.MOVE = &&MOVE_BY;
+        instruction_set.SET_ZERO = &&SET_ZERO;
+        instruction_set.ADD_OFFSET = &&ADD_OFFSET;
+        instruction_set.HALT = &&HALT;
+        
         opcode_map = {
             { '+', &&INCR },
             { '-', &&DECR },
@@ -373,10 +440,11 @@ public:
             { "INCR_BY", &&INCR_BY },
             { "MOVE_BY", &&MOVE_BY },
             { "SET_ZERO", &&SET_ZERO },
+            { "ADD_OFFSET", &&ADD_OFFSET },
             { "HALT", &&HALT }
         };
         
-        CodePlanter planter( filename, opcode_map, extra_opcodes_map, program );
+        CodePlanter planter( filename, opcode_map, extra_opcodes_map, instruction_set, program );
         planter.plantProgram();
 
         std::noskipws( std::cin );
@@ -404,6 +472,15 @@ public:
         {
             int n = pc++->operand;
             *loc += n;
+        }
+        goto *(pc++->opcode);
+    ADD_OFFSET:
+        if ( DEBUG ) std::cout << "ADD_OFFSET" << std::endl;
+        {
+            struct Dyad d = pc++->dyad;
+            int offset = d.operand1;
+            int by = d.operand2;
+            *( loc + offset ) += by;
         }
         goto *(pc++->opcode);
     RIGHT:
