@@ -24,7 +24,7 @@ method (Engine::runFile) fit on a single screen.
 
 //  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
-#define DUMP 0  
+#define DUMP 0
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -189,8 +189,6 @@ typedef struct InstructionSet {
 //  pointer to the implementing code. 
 class CodePlanter {
     PeekableProgramInput input;         //  The source code to be read in, stripped of comment characters.
-    const std::map<char, OpCode> & opcode_map;
-    const std::map<std::string, OpCode> extra_opcodes_map;
     const InstructionSet & instruction_set;
     std::vector<Instruction> & program; 
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
@@ -198,21 +196,17 @@ class CodePlanter {
 public:
     CodePlanter( 
         std::string_view filename, 
-        const std::map<char, OpCode> & opcode_map, 
-        std::map<std::string, OpCode> extra_opcodes_map,
         const InstructionSet & instruction_set,
         std::vector<Instruction> & program 
     ) :
         input( filename.data() ),
-        opcode_map( opcode_map ),
-        extra_opcodes_map( extra_opcodes_map ),
         instruction_set( instruction_set ), 
         program( program )
     {}
 
 private:
     void plantOpen() {
-        program.push_back( { opcode_map.at( '[' ) } );
+        program.push_back( { instruction_set.OPEN } );
         if ( DUMP ) std::cerr << "OPEN" << std::endl;
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
@@ -223,7 +217,7 @@ private:
 
     void plantClose() {
         if ( DUMP ) std::cerr << "CLOSE" << std::endl;
-        program.push_back( { opcode_map.at( ']' ) } );
+        program.push_back( { instruction_set.CLOSE } );
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
@@ -236,24 +230,24 @@ private:
 
     void plantPut() {
         if ( DUMP ) std::cerr << "PUT" << std::endl;
-        program.push_back( { opcode_map.at( '.' ) } );
+        program.push_back( { instruction_set.PUT } );
     }
 
     void plantGet() {
         if ( DUMP ) std::cerr << "GET" << std::endl;
-        program.push_back( { opcode_map.at( ',' ) } );
+        program.push_back( { instruction_set.GET } );
     }
 
     void plantMoveBy( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "RIGHT" << std::endl;
-            program.push_back( { opcode_map.at( '>' ) } );
+            program.push_back( { instruction_set.RIGHT } );
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "LEFT" << std::endl;
-            program.push_back( { opcode_map.at( '<' ) } );
+            program.push_back( { instruction_set.LEFT } );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
-            program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
+            program.push_back( { instruction_set.MOVE } );
             program.push_back( { .operand=n } );
         }
     }
@@ -261,13 +255,13 @@ private:
     void plantAdd( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "INCR" << std::endl;
-            program.push_back( { opcode_map.at( '+' ) } );
+            program.push_back( { instruction_set.INCR } );
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "DECR" << std::endl;
-            program.push_back( { opcode_map.at( '-' ) } );
+            program.push_back( { instruction_set.DECR } );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "ADD " << n << std::endl;
-            program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
+            program.push_back( { instruction_set.ADD } );
             program.push_back( { .operand=n } );
         }
     }
@@ -300,14 +294,14 @@ private:
 
     void plantAddOffset( int offset, int by ) {
         if ( DUMP ) std::cerr << "ADD offset=" << offset << " by=" << by << std::endl;
-        program.push_back( { extra_opcodes_map.at( "ADD_OFFSET" ) } );
+        program.push_back( { instruction_set.ADD_OFFSET } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
     }
 
     void plantMultiply( int offset, int by ) {
         if ( DUMP ) std::cerr << "MULTIPLY offset=" << offset << " by=" << by << std::endl;
-        program.push_back( { extra_opcodes_map.at( "MULTIPLY" ) } );
+        program.push_back( { instruction_set.MULTIPLY } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
 
@@ -354,7 +348,7 @@ private:
 
     void plantSetZero() {
         if ( DUMP ) std::cerr << "SET_ZERO" << std::endl;
-        program.push_back( { extra_opcodes_map.at( "SET_ZERO" ) } );
+        program.push_back( { instruction_set.SET_ZERO } );
     }
 
     MoveAddMove scanMoveIncrMove( int initial ) {
@@ -412,7 +406,7 @@ private:
 public:
     void plantProgram() {
         while ( plantExpr() ) {}
-        program.push_back( { this->extra_opcodes_map.at( "HALT" ) } );
+        program.push_back( { instruction_set.HALT } );
     }
 };
 
@@ -441,34 +435,16 @@ public:
         instruction_set.RIGHT = &&RIGHT;
         instruction_set.OPEN = &&OPEN;
         instruction_set.CLOSE = &&CLOSE;
-        instruction_set.ADD = &&INCR_BY;
-        instruction_set.MOVE = &&MOVE_BY;
+        instruction_set.PUT = &&PUT;
+        instruction_set.GET = &&GET;
+        instruction_set.ADD = &&ADD;
+        instruction_set.MOVE = &&MOVE;
         instruction_set.SET_ZERO = &&SET_ZERO;
         instruction_set.ADD_OFFSET = &&ADD_OFFSET;
         instruction_set.MULTIPLY = &&MULTIPLY;
         instruction_set.HALT = &&HALT;
         
-        opcode_map = {
-            { '+', &&INCR },
-            { '-', &&DECR },
-            { '<', &&LEFT },
-            { '>', &&RIGHT },
-            { '[', &&OPEN },
-            { ']', &&CLOSE },
-            { '.', &&PUT },
-            { ',', &&GET },
-        };
-
-        extra_opcodes_map = {
-            { "INCR_BY", &&INCR_BY },
-            { "MOVE_BY", &&MOVE_BY },
-            { "SET_ZERO", &&SET_ZERO },
-            { "ADD_OFFSET", &&ADD_OFFSET },
-            { "MULTIPLY", &&MULTIPLY },
-            { "HALT", &&HALT }
-        };
-        
-        CodePlanter planter( filename, opcode_map, extra_opcodes_map, instruction_set, program );
+        CodePlanter planter( filename, instruction_set, program );
         planter.plantProgram();
 
         std::noskipws( std::cin );
@@ -491,8 +467,8 @@ public:
         if ( DEBUG ) std::cout << "DECR" << std::endl;
         *loc -= 1;
         goto *(pc++->opcode);
-    INCR_BY:
-        if ( DEBUG ) std::cout << "INCR_BY" << std::endl;
+    ADD:
+        if ( DEBUG ) std::cout << "ADD" << std::endl;
         {
             int n = pc++->operand;
             *loc += n;
@@ -515,8 +491,8 @@ public:
         if ( DEBUG ) std::cout << "LEFT" << std::endl;
         loc -= 1;
         goto *(pc++->opcode);
-    MOVE_BY:
-        if ( DEBUG ) std::cout << "MOVE_BY" << std::endl;
+    MOVE:
+        if ( DEBUG ) std::cout << "MOVE" << std::endl;
         {
             int n = pc++->operand;
             loc += n;
