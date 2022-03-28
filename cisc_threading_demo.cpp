@@ -23,6 +23,7 @@ method (Engine::runFile) fit on a single screen.
 
 //  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
+#define OPTIMISE 0
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -131,6 +132,22 @@ public:
     }
 };
 
+struct MoveIncrMove {
+    int lhs;
+    int by;
+    int rhs;
+public:
+    MoveIncrMove( int lhs, int by, int rhs ) {
+        this->lhs = lhs;
+        this->by = by;
+        this->rhs = rhs;
+    }
+public:
+    bool matches( int L, int N, int R ) {
+        return L == this->lhs && N == this->by && R == this->rhs;
+    }
+};
+
 //  This class is responsible for translating the stream of source code
 //  into a vector<Instruction>. It is passed a mapping from characters
 //  to the addresses-of-labels, so it can plant (aka append) the exact
@@ -191,8 +208,18 @@ private:
         } else if ( n == -1 ) {
             program.push_back( { opcode_map.at( '<' ) } );
         } else if ( n != 0 ) {
-            program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
-            program.push_back( { .operand=n } );
+            if (true) {
+                program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
+                program.push_back( { .operand=n } );
+            } else if ( n > 0 ) {
+                for (int i = 0; i < n; i++ ) {
+                    program.push_back( { opcode_map.at( '>' ) } );
+                }
+            } else if ( n < 0 ) {
+                for (int i = 0; i < -n; i++ ) {
+                    program.push_back( { opcode_map.at( '<' ) } );
+                }
+            }
         }
     }
 
@@ -202,12 +229,23 @@ private:
         } else if ( n == -1 ) {
             program.push_back( { opcode_map.at( '-' ) } );
         } else if ( n != 0 ) {
-            program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
-            program.push_back( { .operand=n } );
+            if (true) {
+                program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
+                program.push_back( { .operand=n } );
+            } else if ( n > 0 ) {
+                for (int i = 0; i < n; i++ ) {
+                    program.push_back( { opcode_map.at( '+' ) } );
+                }
+            } else if ( n < 0 ) {
+                for (int i = 0; i < -n; i++ ) {
+                    program.push_back( { opcode_map.at( '-' ) } );
+                }
+            }
         }
     }
 
     int scanIncrBy( int n ) {
+        // if (!OPTIMISE) return n;
         for (;;) {
             if ( input.tryPop( '+' ) ) {
                 n += 1;
@@ -221,6 +259,7 @@ private:
     }
 
     int scanMoveBy( int n ) {
+        // if (!OPTIMISE) return n;
         for (;;) {
             if ( input.tryPop( '>' ) ) {
                 n += 1;
@@ -233,14 +272,21 @@ private:
         return n;
     }
 
-    void plantMoveByIncrByMoveBy( int move_lhs, int n, int move_rhs ) {
-        plantMoveBy( move_lhs );
-        plantIncrBy( n );
-        plantMoveBy( move_rhs );
+    void plantMoveIncrMove( const MoveIncrMove & mim ) {
+        plantMoveBy( mim.lhs );
+        plantIncrBy( mim.by );
+        plantMoveBy( mim.rhs );
     }
 
     void plantSetZero() {
-        throw new std::runtime_error( "uninmplemented" );
+        program.push_back( { extra_opcodes_map.at( "SET_ZERO" ) } );
+    }
+
+    MoveIncrMove scanMoveIncrMove( int initial ) {
+        int move_lhs = scanMoveBy( initial );
+        int n = scanIncrBy( 0 );
+        int move_rhs = scanMoveBy( 0 );   
+        return MoveIncrMove( move_lhs, n, move_rhs );
     }
 
     bool plantExpr() {
@@ -257,17 +303,21 @@ private:
             case '>':
             case '<':
                 {
-                    int move_lhs = scanMoveBy( ch == '>' ? 1 : -1 );
-                    int n = scanIncrBy( 0 );
-                    int move_rhs = scanMoveBy( 0 );
-                    plantMoveByIncrByMoveBy( move_lhs, n, move_rhs );
+                    MoveIncrMove mim = scanMoveIncrMove( ch == '>' ? 1 : -1 );
+                    plantMoveIncrMove( mim );
                 }
                 break;
             case '[':
-                if ( false && input.tryPopString( "-]" ) ) {
-                    plantSetZero();
-                } else {
-                    plantOpen();
+                {
+                    MoveIncrMove mim = scanMoveIncrMove( 0 );
+                    bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
+                    if ( bump && input.tryPop( ']' ) ) {
+                        std::cerr << "ZERO" << std::endl;
+                        plantSetZero();
+                    } else {
+                        plantOpen();
+                        plantMoveIncrMove( mim );
+                    }   
                 }
                 break;
             case ']':
@@ -322,6 +372,7 @@ public:
         extra_opcodes_map = {
             { "INCR_BY", &&INCR_BY },
             { "MOVE_BY", &&MOVE_BY },
+            { "SET_ZERO", &&SET_ZERO },
             { "HALT", &&HALT }
         };
         
@@ -405,6 +456,10 @@ public:
             }
             goto *(pc++->opcode);
         }
+    SET_ZERO:
+        if ( DEBUG ) std::cout << "SET_ZERO" << std::endl;
+        *loc = 0;
+        goto *(pc++->opcode);
     HALT:
         if ( DEBUG ) std::cout << "DONE!" << std::endl;
         return;
