@@ -156,44 +156,6 @@ public:
     {}
 
 private:
-    // void plantOneChar( char ch, OpCode opcode ) {
-    //     program.push_back( { opcode } );
-    //     //  If we are dealing with loops, we plant the absolute index of the
-    //     //  operation in the program we want to jump to. This can be improved
-    //     //  fairly easily.
-    //     if ( ch == '[' ) {
-    //         indexes.push_back( program.size() );
-    //         program.push_back( {nullptr} );         //  Dummy value, will be overwritten.
-    //     } else if ( ch == ']' ) {
-    //         int end = program.size();
-    //         int start = indexes.back();
-    //         indexes.pop_back();
-    //         program[ start ].operand = end + 1;     //  Overwrite the dummy value.
-    //         program.push_back( { .operand={ start + 1 } } );
-    //     }
-    // }
-
-    // void plantChar( char ch, int n ) {
-    //     //  Guard - skip characters that do not correspond to abstract machine
-    //     //  operations.
-    //     auto it = opcode_map.find(ch);
-    //     return_if( it == opcode_map.end() );
-
-    //     //  Body
-    //     OpCode opc = it->second;
-    //     if ( n == 1 ) {
-    //         plantOneChar( ch, opc );
-    //     } else if ( ch == '+' || ch == '-' ) {
-    //         program.push_back( { extra_opcodes_map.at( "INCR_BY" ) } );
-    //         program.push_back( { .operand={ ch == '-' ? -n : n } } );
-    //     } else if ( ch == '>' || ch == '<' ) {
-    //         program.push_back( { extra_opcodes_map.at( "MOVE_BY" ) } );
-    //         program.push_back( { .operand={ ch == '<' ? -n : n } } );
-    //     } else {
-    //         throw std::runtime_error( "oops" );
-    //     }
-    // }
-
     void plantOpen() {
         program.push_back( { opcode_map.at( '[' ) } );
         //  If we are dealing with loops, we plant the absolute index of the
