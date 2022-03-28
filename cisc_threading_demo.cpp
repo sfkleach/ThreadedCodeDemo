@@ -24,7 +24,7 @@ method (Engine::runFile) fit on a single screen.
 
 //  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
-#define DUMP 0
+#define DUMP 0  
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -90,7 +90,7 @@ public:
         while ( this->buffer.size() <= n ) {
             auto ch = nextChar();
             return_unless( ch )( std::nullopt );
-            this->buffer.push_front( *ch );
+            this->buffer.push_back( *ch );
         }
         return this->buffer[ n ];
     }    
@@ -103,7 +103,7 @@ public:
             }
             return ch;
         } else {
-            return this->buffer.back();
+            return this->buffer.front();
         }
     }
 public:
@@ -111,8 +111,8 @@ public:
         if ( this->buffer.empty() ) {
             return nextChar();
         } else {
-            char ch = this->buffer.back();
-            this->buffer.pop_back();
+            char ch = this->buffer.front();
+            this->buffer.pop_front();
             return ch;
         }
     }
@@ -121,7 +121,7 @@ private:
         if ( this->buffer.empty() ) {
             input.get();
         } else {
-            this->buffer.pop_back();
+            this->buffer.pop_front();
         }
     }
 public:
@@ -137,8 +137,11 @@ public:
     bool tryPopString( std::string str ) {
         int n = 0;
         for ( auto ch : str ) {
-            return_if( this->peekN( n++ ) != ch )( false );
+            auto actual = this->peekN( n );
+            return_if( actual != ch )( false );
+            n += 1;
         }
+        this->buffer.erase( this->buffer.begin(), this->buffer.begin() + n );
         return true;
     }
 };
@@ -157,6 +160,10 @@ public:
     bool matches( int L, int N, int R ) {
         return L == this->lhs && N == this->by && R == this->rhs;
     }
+public:
+    bool isNonZeroBalanced() {
+        return ( this->lhs != 0 ) && ( ( this->lhs + this->rhs ) == 0 );
+    }
 };
 
 typedef struct InstructionSet {
@@ -165,6 +172,7 @@ typedef struct InstructionSet {
     OpCode DECR;
     OpCode ADD;
     OpCode ADD_OFFSET;
+    OpCode MULTIPLY;
     OpCode LEFT;
     OpCode RIGHT;
     OpCode MOVE;
@@ -297,6 +305,18 @@ private:
         program.push_back( { .dyad=d } );
     }
 
+    void plantMultiply( int offset, int by ) {
+        if ( DUMP ) std::cerr << "MULTIPLY offset=" << offset << " by=" << by << std::endl;
+        program.push_back( { extra_opcodes_map.at( "MULTIPLY" ) } );
+        struct Dyad d = { .operand1=offset, .operand2=by };
+        program.push_back( { .dyad=d } );
+
+        // plantOpen();
+        // plantMoveAddMove( { offset, by, -offset } );
+        // plantAdd( -1 );
+        // plantClose();
+    }
+
     void plantMoveAddMove( const MoveAddMove & mim ) {
         if ( mim.by == 0 ) {
             if ( mim.rhs == 0 ) {
@@ -368,6 +388,8 @@ private:
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
                     if ( bump && input.tryPop( ']' ) ) {
                         plantSetZero();
+                    } else if ( mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
+                        plantMultiply( mim.lhs, mim.by );
                     } else {
                         plantOpen();
                         plantMoveAddMove( mim );
@@ -423,6 +445,7 @@ public:
         instruction_set.MOVE = &&MOVE_BY;
         instruction_set.SET_ZERO = &&SET_ZERO;
         instruction_set.ADD_OFFSET = &&ADD_OFFSET;
+        instruction_set.MULTIPLY = &&MULTIPLY;
         instruction_set.HALT = &&HALT;
         
         opcode_map = {
@@ -441,6 +464,7 @@ public:
             { "MOVE_BY", &&MOVE_BY },
             { "SET_ZERO", &&SET_ZERO },
             { "ADD_OFFSET", &&ADD_OFFSET },
+            { "MULTIPLY", &&MULTIPLY },
             { "HALT", &&HALT }
         };
         
@@ -536,6 +560,17 @@ public:
     SET_ZERO:
         if ( DEBUG ) std::cout << "SET_ZERO" << std::endl;
         *loc = 0;
+        goto *(pc++->opcode);
+    MULTIPLY:
+        {
+            struct Dyad d = pc++->dyad;
+            int offset = d.operand1;
+            int by = d.operand2;
+            int n = *loc;
+            if ( DEBUG ) std::cout << "MULTIPLY offset=" << offset << " n=" << n << " by=" << by << std::endl;
+            *( loc + offset ) += n * by;
+            *loc = 0;
+        }
         goto *(pc++->opcode);
     HALT:
         if ( DEBUG ) std::cout << "DONE!" << std::endl;
