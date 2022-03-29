@@ -1,6 +1,6 @@
 /*
 This code demonstrates how to implement direct-threaded code using GNU C++ by
-exploiting a little-know extension - the ability to take the address of a label,
+exploiting a little-known extension - the ability to take the address of a label,
 store it in a pointer, and jump to it through the pointer.
 
 In this example, we translate Brainf*ck into threaded code, where the program
