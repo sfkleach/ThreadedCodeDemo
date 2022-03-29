@@ -44,8 +44,8 @@ template <typename T> int sgn(T val) {
 typedef void * OpCode;
 
 typedef struct Dyad {
-    int operand1;
-    int operand2;
+    int32_t operand1;
+    int32_t operand2;
 } Dyad;
 
 //  The instruction stream is mainly OpCodes but there are some
@@ -175,6 +175,8 @@ typedef struct InstructionSet {
     OpCode MULTIPLY;
     OpCode LEFT;
     OpCode RIGHT;
+    OpCode SEEK_LEFT;
+    OpCode SEEK_RIGHT;
     OpCode MOVE;
     OpCode OPEN;
     OpCode CLOSE;
@@ -238,6 +240,16 @@ private:
         program.push_back( { instruction_set.GET } );
     }
 
+    void plantSEEK_LEFT() {
+        if ( DUMP ) std::cerr << "SEEK_LEFT" << std::endl;
+        program.push_back( { instruction_set.SEEK_LEFT } );
+    }
+
+    void plantSEEK_RIGHT() {
+        if ( DUMP ) std::cerr << "SEEK_RIGHT" << std::endl;
+        program.push_back( { instruction_set.SEEK_RIGHT } );
+    }
+
     void plantMoveBy( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "RIGHT" << std::endl;
@@ -279,7 +291,7 @@ private:
         return n;
     }
 
-    int scanMoveBy( int n ) {
+    int scanMove( int n ) {
         for (;;) {
             if ( input.tryPop( '>' ) ) {
                 n += 1;
@@ -292,23 +304,18 @@ private:
         return n;
     }
 
-    void plantAddOffset( int offset, int by ) {
+    void plantAddOffset( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "ADD offset=" << offset << " by=" << by << std::endl;
         program.push_back( { instruction_set.ADD_OFFSET } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
     }
 
-    void plantMultiply( int offset, int by ) {
+    void plantMultiply( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "MULTIPLY offset=" << offset << " by=" << by << std::endl;
         program.push_back( { instruction_set.MULTIPLY } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
-
-        // plantOpen();
-        // plantMoveAddMove( { offset, by, -offset } );
-        // plantAdd( -1 );
-        // plantClose();
     }
 
     void plantMoveAddMove( const MoveAddMove & mim ) {
@@ -352,9 +359,9 @@ private:
     }
 
     MoveAddMove scanMoveIncrMove( int initial ) {
-        int move_lhs = scanMoveBy( initial );
+        int move_lhs = scanMove( initial );
         int n = scanAdd( 0 );
-        int move_rhs = scanMoveBy( 0 );   
+        int move_rhs = scanMove( 0 );   
         return MoveAddMove( move_lhs, n, move_rhs );
     }
 
@@ -382,6 +389,10 @@ private:
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
                     if ( bump && input.tryPop( ']' ) ) {
                         plantSetZero();
+                    } else if ( mim.matches( 1, 0, 0 ) && input.tryPop( ']') ) {
+                        plantSEEK_RIGHT();
+                    } else if ( mim.matches( -1, 0, 0 ) && input.tryPop( ']') ) {
+                        plantSEEK_LEFT();
                     } else if ( mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
                         plantMultiply( mim.lhs, mim.by );
                     } else {
@@ -442,6 +453,8 @@ public:
         instruction_set.SET_ZERO = &&SET_ZERO;
         instruction_set.ADD_OFFSET = &&ADD_OFFSET;
         instruction_set.MULTIPLY = &&MULTIPLY;
+        instruction_set.SEEK_LEFT = &&SEEK_LEFT;
+        instruction_set.SEEK_RIGHT = &&SEEK_RIGHT;
         instruction_set.HALT = &&HALT;
         
         CodePlanter planter( filename, instruction_set, program );
@@ -478,8 +491,8 @@ public:
         if ( DEBUG ) std::cout << "ADD_OFFSET" << std::endl;
         {
             struct Dyad d = pc++->dyad;
-            int offset = d.operand1;
-            int by = d.operand2;
+            int32_t offset = d.operand1;
+            int32_t by = d.operand2;
             *( loc + offset ) += by;
         }
         goto *(pc++->opcode);
@@ -538,6 +551,7 @@ public:
         *loc = 0;
         goto *(pc++->opcode);
     MULTIPLY:
+        if ( DEBUG ) std::cout << "MULTIPLY" << std::endl;
         {
             struct Dyad d = pc++->dyad;
             int offset = d.operand1;
@@ -546,6 +560,22 @@ public:
             if ( DEBUG ) std::cout << "MULTIPLY offset=" << offset << " n=" << n << " by=" << by << std::endl;
             *( loc + offset ) += n * by;
             *loc = 0;
+        }
+        goto *(pc++->opcode);
+    SEEK_LEFT:
+        if ( DEBUG ) std::cout << "SEEK_LEFT" << std::endl;
+        {
+            while ( *loc ) {
+                loc -= 1;
+            }
+        }
+        goto *(pc++->opcode);
+    SEEK_RIGHT:
+        if ( DEBUG ) std::cout << "SEEK_RIGHT" << std::endl;
+        {
+            while ( *loc ) {
+                loc += 1;
+            }
         }
         goto *(pc++->opcode);
     HALT:
