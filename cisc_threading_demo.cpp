@@ -172,7 +172,7 @@ typedef struct InstructionSet {
     OpCode DECR;
     OpCode ADD;
     OpCode ADD_OFFSET;
-    OpCode MULTIPLY;
+    OpCode XFR_MULTIPLE;
     OpCode LEFT;
     OpCode RIGHT;
     OpCode SEEK_LEFT;
@@ -207,7 +207,7 @@ public:
     {}
 
 private:
-    void plantOpen() {
+    void plantOPEN() {
         program.push_back( { instruction_set.OPEN } );
         if ( DUMP ) std::cerr << "OPEN" << std::endl;
         //  If we are dealing with loops, we plant the absolute index of the
@@ -217,7 +217,7 @@ private:
         program.push_back( {nullptr} );         //  Dummy value, will be overwritten.
     }
 
-    void plantClose() {
+    void plantCLOSE() {
         if ( DUMP ) std::cerr << "CLOSE" << std::endl;
         program.push_back( { instruction_set.CLOSE } );
         //  If we are dealing with loops, we plant the absolute index of the
@@ -230,12 +230,12 @@ private:
         program.push_back( { .operand={ start + 1 } } );
     }
 
-    void plantPut() {
+    void plantPUT() {
         if ( DUMP ) std::cerr << "PUT" << std::endl;
         program.push_back( { instruction_set.PUT } );
     }
 
-    void plantGet() {
+    void plantGET() {
         if ( DUMP ) std::cerr << "GET" << std::endl;
         program.push_back( { instruction_set.GET } );
     }
@@ -250,7 +250,7 @@ private:
         program.push_back( { instruction_set.SEEK_RIGHT } );
     }
 
-    void plantMoveBy( int n ) {
+    void plantMOVE( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "RIGHT" << std::endl;
             program.push_back( { instruction_set.RIGHT } );
@@ -264,7 +264,7 @@ private:
         }
     }
 
-    void plantAdd( int n ) {
+    void plantADD( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "INCR" << std::endl;
             program.push_back( { instruction_set.INCR } );
@@ -304,16 +304,16 @@ private:
         return n;
     }
 
-    void plantAddOffset( int32_t offset, int32_t by ) {
-        if ( DUMP ) std::cerr << "ADD offset=" << offset << " by=" << by << std::endl;
+    void plantADD_OFFSET( int32_t offset, int32_t by ) {
+        if ( DUMP ) std::cerr << "ADD_OFFSET offset=" << offset << " by=" << by << std::endl;
         program.push_back( { instruction_set.ADD_OFFSET } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
     }
 
-    void plantMultiply( int32_t offset, int32_t by ) {
-        if ( DUMP ) std::cerr << "MULTIPLY offset=" << offset << " by=" << by << std::endl;
-        program.push_back( { instruction_set.MULTIPLY } );
+    void plantXFR_MULTIPLE( int32_t offset, int32_t by ) {
+        if ( DUMP ) std::cerr << "XFR_MULTIPLE offset=" << offset << " by=" << by << std::endl;
+        program.push_back( { instruction_set.XFR_MULTIPLE } );
         struct Dyad d = { .operand1=offset, .operand2=by };
         program.push_back( { .dyad=d } );
     }
@@ -321,12 +321,12 @@ private:
     void plantMoveAddMove( const MoveAddMove & mim ) {
         if ( mim.by == 0 ) {
             if ( mim.rhs == 0 ) {
-                plantMoveBy( mim.lhs );
+                plantMOVE( mim.lhs );
             } else if ( mim.lhs == 0 ) {
-                const MoveAddMove nextmam = scanMoveIncrMove( mim.rhs );
+                const MoveAddMove nextmam = scanMoveAddMove( mim.rhs );
                 plantMoveAddMove( nextmam );
             } else {
-                const MoveAddMove nextmam = scanMoveIncrMove( mim.lhs + mim.rhs );
+                const MoveAddMove nextmam = scanMoveAddMove( mim.lhs + mim.rhs );
                 plantMoveAddMove( nextmam );
             }
         } else if (
@@ -336,19 +336,19 @@ private:
             int abs_lhs = abs( mim.lhs ); 
             int abs_rhs = abs( mim.rhs );
             if ( abs_lhs == abs_rhs ) {
-                plantAddOffset( mim.lhs, mim.by );
+                plantADD_OFFSET( mim.lhs, mim.by );
             } else if ( abs_lhs > abs_rhs ) {
-                plantMoveBy( sgn( mim.lhs ) * ( abs_lhs - abs_rhs ) );
-                plantAddOffset( sgn( mim.lhs ) * abs_rhs, mim.by );
+                plantMOVE( sgn( mim.lhs ) * ( abs_lhs - abs_rhs ) );
+                plantADD_OFFSET( sgn( mim.lhs ) * abs_rhs, mim.by );
             } else /* if ( abs_lhs < abs_rhs ) */ {
-                plantAddOffset( mim.lhs, mim.by );
-                const MoveAddMove nextmam = scanMoveIncrMove( sgn( mim.rhs ) * ( abs_rhs - abs_lhs ) );
+                plantADD_OFFSET( mim.lhs, mim.by );
+                const MoveAddMove nextmam = scanMoveAddMove( sgn( mim.rhs ) * ( abs_rhs - abs_lhs ) );
                 plantMoveAddMove( nextmam );
            }
         } else {
-            plantMoveBy( mim.lhs );
-            plantAdd( mim.by );
-            const MoveAddMove nextmam = scanMoveIncrMove( mim.rhs );
+            plantMOVE( mim.lhs );
+            plantADD( mim.by );
+            const MoveAddMove nextmam = scanMoveAddMove( mim.rhs );
             plantMoveAddMove( nextmam );
         }
     }
@@ -358,7 +358,7 @@ private:
         program.push_back( { instruction_set.SET_ZERO } );
     }
 
-    MoveAddMove scanMoveIncrMove( int initial ) {
+    MoveAddMove scanMoveAddMove( int initial ) {
         int move_lhs = scanMove( initial );
         int n = scanAdd( 0 );
         int move_rhs = scanMove( 0 );   
@@ -371,21 +371,21 @@ private:
 
         switch ( *ch ) {
             case '+':
-                plantAdd( scanAdd( 1 ) );
+                plantADD( scanAdd( 1 ) );
                 break;
             case '-':
-                plantAdd( scanAdd( -1 ) );
+                plantADD( scanAdd( -1 ) );
                 break;
             case '>':
             case '<':
                 {
-                    MoveAddMove mim = scanMoveIncrMove( ch == '>' ? 1 : -1 );
+                    MoveAddMove mim = scanMoveAddMove( ch == '>' ? 1 : -1 );
                     plantMoveAddMove( mim );
                 }
                 break;
             case '[':
                 {
-                    MoveAddMove mim = scanMoveIncrMove( 0 );
+                    MoveAddMove mim = scanMoveAddMove( 0 );
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
                     if ( bump && input.tryPop( ']' ) ) {
                         plantSetZero();
@@ -394,21 +394,21 @@ private:
                     } else if ( mim.matches( -1, 0, 0 ) && input.tryPop( ']') ) {
                         plantSEEK_LEFT();
                     } else if ( mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
-                        plantMultiply( mim.lhs, mim.by );
+                        plantXFR_MULTIPLE( mim.lhs, mim.by );
                     } else {
-                        plantOpen();
+                        plantOPEN();
                         plantMoveAddMove( mim );
                     }   
                 }
                 break;
             case ']':
-                plantClose();
+                plantCLOSE();
                 break;
             case '.':
-                plantPut();
+                plantPUT();
                 break;
             case ',':
-                plantGet();
+                plantGET();
                 break;
         }
         return true;
@@ -452,7 +452,7 @@ public:
         instruction_set.MOVE = &&MOVE;
         instruction_set.SET_ZERO = &&SET_ZERO;
         instruction_set.ADD_OFFSET = &&ADD_OFFSET;
-        instruction_set.MULTIPLY = &&MULTIPLY;
+        instruction_set.XFR_MULTIPLE = &&XFR_MULTIPLE;
         instruction_set.SEEK_LEFT = &&SEEK_LEFT;
         instruction_set.SEEK_RIGHT = &&SEEK_RIGHT;
         instruction_set.HALT = &&HALT;
@@ -550,14 +550,14 @@ public:
         if ( DEBUG ) std::cout << "SET_ZERO" << std::endl;
         *loc = 0;
         goto *(pc++->opcode);
-    MULTIPLY:
-        if ( DEBUG ) std::cout << "MULTIPLY" << std::endl;
+    XFR_MULTIPLE:
+        if ( DEBUG ) std::cout << "XFR_MULTIPLE" << std::endl;
         {
             struct Dyad d = pc++->dyad;
             int offset = d.operand1;
             int by = d.operand2;
             int n = *loc;
-            if ( DEBUG ) std::cout << "MULTIPLY offset=" << offset << " n=" << n << " by=" << by << std::endl;
+            if ( DEBUG ) std::cout << "XFR_MULTIPLE offset=" << offset << " n=" << n << " by=" << by << std::endl;
             *( loc + offset ) += n * by;
             *loc = 0;
         }
