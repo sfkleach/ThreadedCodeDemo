@@ -27,7 +27,7 @@ method (Engine::runFile) fit on a single screen.
 using namespace nlohmann;
 
 //  Use this to turn on or off some debug-level tracing.
-#define DUMP 1
+#define DUMP 0
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -42,23 +42,6 @@ using namespace nlohmann;
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 };
-
-//  We use the address of a label to play the role of an operation-code.
-typedef std::string OpCode;
-
-typedef struct Dyad {
-    int32_t operand1;
-    int32_t operand2;
-} Dyad;
-
-//  The instruction stream is mainly OpCodes but there are some
-//  integer arguments interspersed. Strictly speaking this makes this
-//  interpreter a hybrid between direct/indirect threading.
-typedef union {
-    OpCode opcode;
-    int operand;
-    Dyad dyad;
-} Instruction;
 
 class PeekableProgramInput {
     std::istream& input;                //  The source code to be read in.
@@ -437,8 +420,6 @@ public:
         plantOpCode( instruction_set.HALT );
     }
 };
-
-
 
 
 /*
