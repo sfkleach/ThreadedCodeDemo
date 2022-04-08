@@ -92,21 +92,21 @@ public:
         switch ( hash( name.c_str() ) ) {
             case hash( "SET_ZERO" ): return SET_ZERO;
             case hash( "INCR" ): return INCR;
-            case hash( "DECR;" ): return DECR;
-            case hash( "ADD;" ): return ADD;
-            case hash( "ADD_OFFSET;" ): return ADD_OFFSET;
-            case hash( "XFR_MULTIPLE;" ): return XFR_MULTIPLE;
-            case hash( "LEFT;" ): return LEFT;
-            case hash( "RIGHT;" ): return RIGHT;
-            case hash( "SEEK_LEFT;" ): return SEEK_LEFT;
-            case hash( "SEEK_RIGHT;" ): return SEEK_RIGHT;
-            case hash( "MOVE;" ): return MOVE;
-            case hash( "OPEN;" ): return OPEN;
-            case hash( "CLOSE;" ): return CLOSE;
-            case hash( "GET;" ): return GET;
-            case hash( "PUT;" ): return PUT;
-            case hash( "HALT;" ): return HALT;
-        }
+            case hash( "DECR" ): return DECR;
+            case hash( "ADD" ): return ADD;
+            case hash( "ADD_OFFSET" ): return ADD_OFFSET;
+            case hash( "XFR_MULTIPLE" ): return XFR_MULTIPLE;
+            case hash( "LEFT" ): return LEFT;
+            case hash( "RIGHT" ): return RIGHT;
+            case hash( "SEEK_LEFT" ): return SEEK_LEFT;
+            case hash( "SEEK_RIGHT" ): return SEEK_RIGHT;
+            case hash( "MOVE" ): return MOVE;
+            case hash( "OPEN" ): return OPEN;
+            case hash( "CLOSE" ): return CLOSE;
+            case hash( "GET" ): return GET;
+            case hash( "PUT" ): return PUT;
+            case hash( "HALT" ): return HALT;
+        };
         throw std::runtime_error( "Unrecognised opcode: " + name );
     }
 } InstructionSet;
