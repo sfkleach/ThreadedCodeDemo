@@ -1,17 +1,7 @@
 /*
-This code demonstrates how to implement direct-threaded code using GNU C++ by
-exploiting a little-known extension - the ability to take the address of a label,
-store it in a pointer, and jump to it through the pointer.
-
-In this example, we translate Brainf*ck into threaded code, where the program
-is a sequence of abstract-machine instructions. Each instruction of the program
-is a pointer to a label that represents the code to execute, optionally
-followed by some integer data.
-
-We use Brainf*ck because it has very few instructions, which makes the crucial 
-method (Engine::runFile) fit on a single screen.
+This code demonstrates how to separate out the translation of Brainf*ck source 
+code from its execution. We introduce an intermediate JSON format.
 */
-
 
 #include <iostream>
 #include <vector>
@@ -42,6 +32,10 @@ using namespace nlohmann;
 template <typename T> int sgn(T val) {
     return (T(0) < val) - (val < T(0));
 };
+
+bool startsWith( std::string_view haystack, std::string_view needle ) {
+    return haystack.rfind( needle, 0 ) == 0;
+}
 
 class PeekableProgramInput {
     std::istream& input;                //  The source code to be read in.
@@ -154,45 +148,111 @@ public:
 
 typedef struct OpCode {
     std::string name;
+    bool setZero;
 } OpCode;
 
 typedef struct InstructionSet {
-    OpCode SET_ZERO = { "SET_ZERO" };
-    OpCode INCR = { "INCR" };
-    OpCode DECR = { "DECR" };
-    OpCode ADD = { "ADD" };
-    OpCode ADD_OFFSET = { "ADD_OFFSET" };
-    OpCode XFR_MULTIPLE = { "XFR_MULTIPLE" };
-    OpCode LEFT = { "LEFT" };
-    OpCode RIGHT = { "RIGHT" };
-    OpCode SEEK_LEFT = { "SEEK_LEFT" };
-    OpCode SEEK_RIGHT = { "SEEK_RIGHT" };
-    OpCode MOVE = { "MOVE" };
-    OpCode OPEN = { "OPEN" };
-    OpCode CLOSE = { "CLOSE" };
-    OpCode GET = { "GET" };
-    OpCode PUT = { "PUT" };
-    OpCode HALT = { "HALT" };
+    OpCode SET_ZERO = { "SET_ZERO", true };
+    OpCode INCR = { "INCR", false };
+    OpCode DECR = { "DECR", false };
+    OpCode ADD = { "ADD", false };
+    OpCode ADD_OFFSET = { "ADD_OFFSET", false };
+    OpCode XFR_MULTIPLE = { "XFR_MULTIPLE", false };
+    OpCode LEFT = { "LEFT", false };
+    OpCode RIGHT = { "RIGHT", false };
+    OpCode SEEK_LEFT = { "SEEK_LEFT", true };
+    OpCode SEEK_RIGHT = { "SEEK_RIGHT", true };
+    OpCode MOVE = { "MOVE", false };
+    OpCode OPEN = { "OPEN", false };
+    OpCode CLOSE = { "CLOSE", true };
+    OpCode GET = { "GET", false };
+    OpCode PUT = { "PUT", false };
+    OpCode HALT = { "HALT", false };
 } InstructionSet; 
 
+//  TODO: This should be moved to a chared header file.
 const char * OPCODE = "OpCode";
+
+typedef struct CompileFlags {
+    bool deadCodeRemoval = true;
+    bool seekZero = true;
+    bool setZero = true;
+    bool xfrMultiple = true;
+
+    void setDeadCode( bool enabled ) {
+        this->deadCodeRemoval = enabled;
+    }
+
+    void setSeekZero( bool enabled ) {
+        this->seekZero = enabled;
+    }
+
+    void setSetZero( bool enabled ) {
+        this->setZero = enabled;
+    }
+
+    void setXfrMultiple( bool enabled ) {
+        this->xfrMultiple = enabled;
+    }
+
+    void setAll( bool enabled ) {
+        this->setDeadCode( enabled );
+        this->setSeekZero( enabled );
+        this->setSetZero( enabled );
+        this->setXfrMultiple( enabled );
+    }
+
+    void setArg( const std::string & arg, bool enable ) {
+        if ( arg == "--all" ) {
+            setAll( true );
+        } else if ( arg == "--none" ) {
+            setAll( false );
+        } else if ( arg == "--deadcode" ) {
+            setDeadCode( enable );
+        } else if ( arg == "--seekzero" ) {
+            setSeekZero( enable );
+        } else if ( arg == "--setzero" ) {
+            setSetZero( enable );
+        } else if ( arg == "--xfrmultiple" ) {
+            setXfrMultiple( enable );
+        } else {
+            std::string prefix( "--no-" );
+            if ( startsWith( arg, prefix ) ) {    //  is it a prefix?
+                setArg( "--" + arg.substr( prefix.size() ), not enable );
+            } else {
+                throw std::runtime_error( "Unrecognised option: " + arg );
+            }
+        }
+    }
+
+    CompileFlags( const std::vector<std::string> args ) {
+        for ( auto& arg : args ) {
+            break_if( arg == "--" );
+            setArg( arg, true );
+        }
+    }
+} CompileFlags;
 
 //  This class is responsible for translating the stream of source code
 //  into a vector<Instruction>. It is passed a mapping from characters
 //  to the addresses-of-labels, so it can plant (aka append) the exact
 //  pointer to the implementing code. 
 class CodePlanter {
+    CompileFlags flags;
     PeekableProgramInput input;         //  The source code to be read in, stripped of comment characters.
+    bool loc_is_zero = true;            //  True if, at this point in the program, the current location is guaranteed to be zero.
     const InstructionSet & instruction_set;
     json & program; 
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
-
+    
 public:
     CodePlanter( 
-        std::istream& input_stream, 
+        CompileFlags flags,
+        std::istream& input_stream,
         const InstructionSet & instruction_set,
         json& program 
     ) :
+        flags( flags ),
         input( input_stream ),
         instruction_set( instruction_set ), 
         program( program )
@@ -202,6 +262,7 @@ private:
 
     void plantOpCode( const OpCode & opcode ) {
         program.push_back( {{ "OpCode", opcode.name }} );
+        this->loc_is_zero = opcode.setZero;
     }
 
     void plantOperand( int64_t n ) {
@@ -387,16 +448,31 @@ private:
                 }
                 break;
             case '[':
-                {
+                if ( this->loc_is_zero && flags.deadCodeRemoval ) {
+                    //  Putting comments inside [ ... ] when the location is 
+                    //  known to be zero is a frequent feature of Brainf*ck 
+                    //  programs. This enables us to delete the comment.
+                    int nesting = 1;
+                    for (;;) {
+                        ch = input.pop();
+                        break_unless( ch );
+                        if ( ch == '[' ) {
+                            nesting += 1;
+                        } else if ( ch == ']' ) {
+                            nesting -= 1;
+                        }
+                        break_if( nesting == 0 );
+                    }
+                } else {
                     MoveAddMove mim = scanMoveAddMove( 0 );
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
-                    if ( bump && input.tryPop( ']' ) ) {
+                    if ( bump && flags.setZero && input.tryPop( ']' ) ) {
                         plantSetZero();
-                    } else if ( mim.matches( 1, 0, 0 ) && input.tryPop( ']') ) {
+                    } else if ( flags.seekZero && mim.matches( 1, 0, 0 ) && input.tryPop( ']') ) {
                         plantSEEK_RIGHT();
-                    } else if ( mim.matches( -1, 0, 0 ) && input.tryPop( ']') ) {
+                    } else if ( flags.seekZero && mim.matches( -1, 0, 0 ) && input.tryPop( ']') ) {
                         plantSEEK_LEFT();
-                    } else if ( mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
+                    } else if ( flags.xfrMultiple && mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
                         plantXFR_MULTIPLE( mim.lhs, mim.by );
                     } else {
                         plantOPEN();
@@ -424,15 +500,16 @@ public:
     }
 };
 
-
 /*
 Compiles Brainf*ck code on the standard input into a JSON array of 
 CISC instructions.
 */
 int main( int argc, char * argv[] ) {
+    std::vector<std::string> args(argv + 1, argv + argc);
+    CompileFlags flags( args );
     json program;
     const InstructionSet instruction_set;
-    CodePlanter planter( std::cin, instruction_set, program );
+    CodePlanter planter( flags, std::cin, instruction_set, program );
     planter.plantProgram();
     std::cout << program.dump(4) << std::endl;
     exit( EXIT_SUCCESS );
