@@ -31,3 +31,11 @@
 *.out
 *.app
 /attic/
+/alt2_subroutine_threading_demo
+/alt_subroutine_threading_demo
+/cisc_threading_demo
+/compiler_and_runner/cisc_compiler_demo
+/compiler_and_runner/cisc_runner_demo
+/direct_threading_demo
+/rust_threading_demo
+/subroutine_threading_demo
