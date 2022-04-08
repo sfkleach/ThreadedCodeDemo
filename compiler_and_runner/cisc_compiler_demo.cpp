@@ -152,24 +152,27 @@ public:
     }
 };
 
+typedef struct OpCode {
+    std::string name;
+} OpCode;
 
 typedef struct InstructionSet {
-    OpCode SET_ZERO = "SET_ZERO";
-    OpCode INCR = "INCR";
-    OpCode DECR = "DECR";
-    OpCode ADD = "ADD";
-    OpCode ADD_OFFSET = "ADD_OFFSET";
-    OpCode XFR_MULTIPLE = "XFR_MULTIPLE";
-    OpCode LEFT = "LEFT";
-    OpCode RIGHT = "RIGHT";
-    OpCode SEEK_LEFT = "SEEK_LEFT";
-    OpCode SEEK_RIGHT = "SEEK_RIGHT";
-    OpCode MOVE = "MOVE";
-    OpCode OPEN = "OPEN";
-    OpCode CLOSE = "CLOSE";
-    OpCode GET = "GET";
-    OpCode PUT = "PUT";
-    OpCode HALT = "HALT";
+    OpCode SET_ZERO = { "SET_ZERO" };
+    OpCode INCR = { "INCR" };
+    OpCode DECR = { "DECR" };
+    OpCode ADD = { "ADD" };
+    OpCode ADD_OFFSET = { "ADD_OFFSET" };
+    OpCode XFR_MULTIPLE = { "XFR_MULTIPLE" };
+    OpCode LEFT = { "LEFT" };
+    OpCode RIGHT = { "RIGHT" };
+    OpCode SEEK_LEFT = { "SEEK_LEFT" };
+    OpCode SEEK_RIGHT = { "SEEK_RIGHT" };
+    OpCode MOVE = { "MOVE" };
+    OpCode OPEN = { "OPEN" };
+    OpCode CLOSE = { "CLOSE" };
+    OpCode GET = { "GET" };
+    OpCode PUT = { "PUT" };
+    OpCode HALT = { "HALT" };
 } InstructionSet; 
 
 const char * OPCODE = "OpCode";
@@ -197,8 +200,8 @@ public:
 
 private:
 
-    void plantOpCode( std::string_view opcode ) {
-        program.push_back( {{ "OpCode", opcode }} );
+    void plantOpCode( const OpCode & opcode ) {
+        program.push_back( {{ "OpCode", opcode.name }} );
     }
 
     void plantOperand( int64_t n ) {
