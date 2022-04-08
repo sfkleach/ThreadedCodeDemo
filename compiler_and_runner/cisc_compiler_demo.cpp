@@ -189,6 +189,8 @@ typedef struct InstructionSet {
     OpCode HALT = "HALT";
 } InstructionSet; 
 
+const char * OPCODE = "OpCode";
+
 //  This class is responsible for translating the stream of source code
 //  into a vector<Instruction>. It is passed a mapping from characters
 //  to the addresses-of-labels, so it can plant (aka append) the exact
@@ -211,19 +213,32 @@ public:
     {}
 
 private:
+
+    void plantOpCode( std::string_view opcode ) {
+        program.push_back( {{ "OpCode", opcode }} );
+    }
+
+    void plantOperand( int64_t n ) {
+        program.push_back( {{ "Operand", n }} );
+    }
+
+    void plantDyad( int32_t hi, int32_t lo ) {
+        program.push_back( { { "High", hi }, { "Low", lo } } );
+    }
+
     void plantOPEN() {
-        program.push_back( instruction_set.OPEN );
+        plantOpCode( instruction_set.OPEN );
         if ( DUMP ) std::cerr << "OPEN" << std::endl;
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
         indexes.push_back( program.size() );
-        program.push_back( {nullptr} );         //  Dummy value, will be overwritten.
+        program.push_back( nullptr );         //  Dummy value, will be overwritten.
     }
 
     void plantCLOSE() {
         if ( DUMP ) std::cerr << "CLOSE" << std::endl;
-        program.push_back( { instruction_set.CLOSE } );
+        plantOpCode( instruction_set.CLOSE );
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
@@ -236,49 +251,49 @@ private:
 
     void plantPUT() {
         if ( DUMP ) std::cerr << "PUT" << std::endl;
-        program.push_back( { instruction_set.PUT } );
+        plantOpCode( instruction_set.PUT );
     }
 
     void plantGET() {
         if ( DUMP ) std::cerr << "GET" << std::endl;
-        program.push_back( { instruction_set.GET } );
+        program.push_back( instruction_set.GET );
     }
 
     void plantSEEK_LEFT() {
         if ( DUMP ) std::cerr << "SEEK_LEFT" << std::endl;
-        program.push_back( { instruction_set.SEEK_LEFT } );
+        program.push_back( instruction_set.SEEK_LEFT );
     }
 
     void plantSEEK_RIGHT() {
         if ( DUMP ) std::cerr << "SEEK_RIGHT" << std::endl;
-        program.push_back( { instruction_set.SEEK_RIGHT } );
+        program.push_back( instruction_set.SEEK_RIGHT );
     }
 
     void plantMOVE( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "RIGHT" << std::endl;
-            program.push_back( { instruction_set.RIGHT } );
+            program.push_back( instruction_set.RIGHT );
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "LEFT" << std::endl;
-            program.push_back( { instruction_set.LEFT } );
+            program.push_back( instruction_set.LEFT );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
-            program.push_back( { instruction_set.MOVE } );
-            program.push_back( { .operand=n } );
+            program.push_back( instruction_set.MOVE );
+            program.push_back( n );
         }
     }
 
     void plantADD( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "INCR" << std::endl;
-            program.push_back( { instruction_set.INCR } );
+            program.push_back( instruction_set.INCR);
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "DECR" << std::endl;
-            program.push_back( { instruction_set.DECR } );
+            program.push_back( instruction_set.DECR );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "ADD " << n << std::endl;
-            program.push_back( { instruction_set.ADD } );
-            program.push_back( { .operand=n } );
+            program.push_back( instruction_set.ADD );
+            program.push_back( n );
         }
     }
 
@@ -311,13 +326,13 @@ private:
     void plantADD_OFFSET( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "ADD_OFFSET offset=" << offset << " by=" << by << std::endl;
         program.push_back( instruction_set.ADD_OFFSET );
-        program.push_back( ((int64_t)offset << 32) | by );
+        program.push_back( { offset, by } );
     }
 
     void plantXFR_MULTIPLE( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "XFR_MULTIPLE offset=" << offset << " by=" << by << std::endl;
         program.push_back( instruction_set.XFR_MULTIPLE );
-        program.push_back( ((int64_t)offset << 32) | by );
+        program.push_back( { offset, by } );
     }
 
     void plantMoveAddMove( const MoveAddMove & mim ) {
@@ -357,7 +372,7 @@ private:
 
     void plantSetZero() {
         if ( DUMP ) std::cerr << "SET_ZERO" << std::endl;
-        program.push_back( { instruction_set.SET_ZERO } );
+        program.push_back( instruction_set.SET_ZERO );
     }
 
     MoveAddMove scanMoveAddMove( int initial ) {
@@ -419,7 +434,7 @@ private:
 public:
     void plantProgram() {
         while ( plantExpr() ) {}
-        program.push_back( { instruction_set.HALT } );
+        program.push_back( instruction_set.HALT );
     }
 };
 
@@ -433,7 +448,8 @@ CISC instructions.
 int main( int argc, char * argv[] ) {
     json program;
     const InstructionSet instruction_set;
-    CodePlanter( std::cin, instruction_set, program );
-    std::cout << program << std::endl;
+    CodePlanter planter( std::cin, instruction_set, program );
+    planter.plantProgram();
+    std::cout << program.dump(4) << std::endl;
     exit( EXIT_SUCCESS );
 }
