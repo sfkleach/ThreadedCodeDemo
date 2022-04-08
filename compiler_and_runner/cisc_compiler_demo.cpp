@@ -246,7 +246,7 @@ private:
         int start = indexes.back();
         indexes.pop_back();
         program[ start ] = end + 1;     //  Overwrite the dummy value.
-        program.push_back( start + 1 );
+        plantOperand( start + 1 );
     }
 
     void plantPUT() {
@@ -256,44 +256,44 @@ private:
 
     void plantGET() {
         if ( DUMP ) std::cerr << "GET" << std::endl;
-        program.push_back( instruction_set.GET );
+        plantOpCode( instruction_set.GET );
     }
 
     void plantSEEK_LEFT() {
         if ( DUMP ) std::cerr << "SEEK_LEFT" << std::endl;
-        program.push_back( instruction_set.SEEK_LEFT );
+        plantOpCode( instruction_set.SEEK_LEFT );
     }
 
     void plantSEEK_RIGHT() {
         if ( DUMP ) std::cerr << "SEEK_RIGHT" << std::endl;
-        program.push_back( instruction_set.SEEK_RIGHT );
+        plantOpCode( instruction_set.SEEK_RIGHT );
     }
 
     void plantMOVE( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "RIGHT" << std::endl;
-            program.push_back( instruction_set.RIGHT );
+            plantOpCode( instruction_set.RIGHT );
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "LEFT" << std::endl;
-            program.push_back( instruction_set.LEFT );
+            plantOpCode( instruction_set.LEFT );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
-            program.push_back( instruction_set.MOVE );
-            program.push_back( n );
+            plantOpCode( instruction_set.MOVE );
+            plantOperand( n );
         }
     }
 
     void plantADD( int n ) {
         if ( n == 1 ) {
             if ( DUMP ) std::cerr << "INCR" << std::endl;
-            program.push_back( instruction_set.INCR);
+            plantOpCode( instruction_set.INCR);
         } else if ( n == -1 ) {
             if ( DUMP ) std::cerr << "DECR" << std::endl;
-            program.push_back( instruction_set.DECR );
+            plantOpCode( instruction_set.DECR );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "ADD " << n << std::endl;
-            program.push_back( instruction_set.ADD );
-            program.push_back( n );
+            plantOpCode( instruction_set.ADD );
+            plantOperand( n );
         }
     }
 
@@ -325,14 +325,14 @@ private:
 
     void plantADD_OFFSET( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "ADD_OFFSET offset=" << offset << " by=" << by << std::endl;
-        program.push_back( instruction_set.ADD_OFFSET );
-        program.push_back( { offset, by } );
+        plantOpCode( instruction_set.ADD_OFFSET );
+        plantDyad( offset, by );
     }
 
     void plantXFR_MULTIPLE( int32_t offset, int32_t by ) {
         if ( DUMP ) std::cerr << "XFR_MULTIPLE offset=" << offset << " by=" << by << std::endl;
-        program.push_back( instruction_set.XFR_MULTIPLE );
-        program.push_back( { offset, by } );
+        plantOpCode( instruction_set.XFR_MULTIPLE );
+        plantDyad( offset, by );
     }
 
     void plantMoveAddMove( const MoveAddMove & mim ) {
@@ -372,7 +372,7 @@ private:
 
     void plantSetZero() {
         if ( DUMP ) std::cerr << "SET_ZERO" << std::endl;
-        program.push_back( instruction_set.SET_ZERO );
+        plantOpCode( instruction_set.SET_ZERO );
     }
 
     MoveAddMove scanMoveAddMove( int initial ) {
@@ -434,7 +434,7 @@ private:
 public:
     void plantProgram() {
         while ( plantExpr() ) {}
-        program.push_back( instruction_set.HALT );
+        plantOpCode( instruction_set.HALT );
     }
 };
 
