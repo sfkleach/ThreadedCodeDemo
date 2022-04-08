@@ -22,6 +22,11 @@ method (Engine::runFile) fit on a single screen.
 #include <deque>
 #include <cstdlib>
 
+
+#include "json.hpp"
+
+using namespace nlohmann;
+
 //  Use this to turn on or off some debug-level tracing.
 #define DEBUG 0
 #define DUMP 0
@@ -53,118 +58,17 @@ typedef struct Dyad {
 //  interpreter a hybrid between direct/indirect threading.
 typedef union {
     OpCode opcode;
-    int operand;
+    int64_t operand;
     Dyad dyad;
 } Instruction;
 
-class PeekableProgramInput {
-    std::ifstream input;                //  The source code to be read in.
-    std::deque< char > buffer;
-public:
-    PeekableProgramInput( std::string_view filename ) :
-        input( filename.data(), std::ios::in )
-    {}
-private:
-    std::optional<char> nextChar() {
-        for (;;) {
-            char ch = input.get();
-            if ( input.good() ) {
-                switch ( ch ) {
-                    case '>':
-                    case '<':
-                    case '+':
-                    case '-':
-                    case '.':
-                    case ',':
-                    case '[':
-                    case ']':
-                        return std::optional<char>( ch );
-                }
-            } else {
-                return std::nullopt;
-            }
-        }
-    }
-public:
-    std::optional<char> peekN( size_t n ) {
-        while ( this->buffer.size() <= n ) {
-            auto ch = nextChar();
-            return_unless( ch )( std::nullopt );
-            this->buffer.push_back( *ch );
-        }
-        return this->buffer[ n ];
-    }    
-public:
-    std::optional<char> peek() {
-        if ( this->buffer.empty() ) {
-            auto ch = nextChar();
-            if ( ch ) {
-                this->buffer.push_back( *ch );
-            }
-            return ch;
-        } else {
-            return this->buffer.front();
-        }
-    }
-public:
-    std::optional<char> pop() {
-        if ( this->buffer.empty() ) {
-            return nextChar();
-        } else {
-            char ch = this->buffer.front();
-            this->buffer.pop_front();
-            return ch;
-        }
-    }
-private:
-    void drop() {
-        if ( this->buffer.empty() ) {
-            input.get();
-        } else {
-            this->buffer.pop_front();
-        }
-    }
-public:
-    bool tryPop( char ch ) {
-        if ( this->peek() == ch ) {
-            this->drop();
-            return true;
-        } else {
-            return false;
-        }
-    }
-public:
-    bool tryPopString( std::string str ) {
-        int n = 0;
-        for ( auto ch : str ) {
-            auto actual = this->peekN( n );
-            return_if( actual != ch )( false );
-            n += 1;
-        }
-        this->buffer.erase( this->buffer.begin(), this->buffer.begin() + n );
-        return true;
-    }
-};
-
-struct MoveAddMove {
-    int lhs;
-    int by;
-    int rhs;
-public:
-    MoveAddMove( int lhs, int by, int rhs ) {
-        this->lhs = lhs;
-        this->by = by;
-        this->rhs = rhs;
-    }
-public:
-    bool matches( int L, int N, int R ) {
-        return L == this->lhs && N == this->by && R == this->rhs;
-    }
-public:
-    bool isNonZeroBalanced() {
-        return ( this->lhs != 0 ) && ( ( this->lhs + this->rhs ) == 0 );
-    }
-};
+//  Horrible hack to more-or-less switch on string-literals.
+//      https://www.rioki.org/2016/03/31/cpp-switch-string.html
+constexpr 
+unsigned int hash(const char* str, int h = 0)
+{
+    return !str[h] ? 5381 : (hash(str, h+1)*33) ^ str[h];
+}
 
 typedef struct InstructionSet {
     OpCode SET_ZERO;
@@ -183,6 +87,28 @@ typedef struct InstructionSet {
     OpCode GET;
     OpCode PUT;
     OpCode HALT;
+public:
+    OpCode byName( const std::string & name ) const {
+        switch ( hash( name.c_str() ) ) {
+            case hash( "SET_ZERO" ): return SET_ZERO;
+            case hash( "INCR" ): return INCR;
+            case hash( "DECR;" ): return DECR;
+            case hash( "ADD;" ): return ADD;
+            case hash( "ADD_OFFSET;" ): return ADD_OFFSET;
+            case hash( "XFR_MULTIPLE;" ): return XFR_MULTIPLE;
+            case hash( "LEFT;" ): return LEFT;
+            case hash( "RIGHT;" ): return RIGHT;
+            case hash( "SEEK_LEFT;" ): return SEEK_LEFT;
+            case hash( "SEEK_RIGHT;" ): return SEEK_RIGHT;
+            case hash( "MOVE;" ): return MOVE;
+            case hash( "OPEN;" ): return OPEN;
+            case hash( "CLOSE;" ): return CLOSE;
+            case hash( "GET;" ): return GET;
+            case hash( "PUT;" ): return PUT;
+            case hash( "HALT;" ): return HALT;
+        }
+        throw std::runtime_error( "Unrecognised opcode: " + name );
+    }
 } InstructionSet;
 
 //  This class is responsible for translating the stream of source code
@@ -190,233 +116,55 @@ typedef struct InstructionSet {
 //  to the addresses-of-labels, so it can plant (aka append) the exact
 //  pointer to the implementing code. 
 class CodePlanter {
-    PeekableProgramInput input;         //  The source code to be read in, stripped of comment characters.
+    const std::string filename;  
     const InstructionSet & instruction_set;
     std::vector<Instruction> & program; 
-    std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
 
 public:
     CodePlanter( 
-        std::string_view filename, 
+        const std::string filename,
         const InstructionSet & instruction_set,
         std::vector<Instruction> & program 
     ) :
-        input( filename.data() ),
+        filename( filename ),
         instruction_set( instruction_set ), 
         program( program )
     {}
 
 private:
-    void plantOPEN() {
-        program.push_back( { instruction_set.OPEN } );
-        if ( DUMP ) std::cerr << "OPEN" << std::endl;
-        //  If we are dealing with loops, we plant the absolute index of the
-        //  operation in the program we want to jump to. This can be improved
-        //  fairly easily.
-        indexes.push_back( program.size() );
-        program.push_back( {nullptr} );         //  Dummy value, will be overwritten.
-    }
 
-    void plantCLOSE() {
-        if ( DUMP ) std::cerr << "CLOSE" << std::endl;
-        program.push_back( { instruction_set.CLOSE } );
-        //  If we are dealing with loops, we plant the absolute index of the
-        //  operation in the program we want to jump to. This can be improved
-        //  fairly easily.
-        int end = program.size();
-        int start = indexes.back();
-        indexes.pop_back();
-        program[ start ].operand = end + 1;     //  Overwrite the dummy value.
-        program.push_back( { .operand={ start + 1 } } );
-    }
-
-    void plantPUT() {
-        if ( DUMP ) std::cerr << "PUT" << std::endl;
-        program.push_back( { instruction_set.PUT } );
-    }
-
-    void plantGET() {
-        if ( DUMP ) std::cerr << "GET" << std::endl;
-        program.push_back( { instruction_set.GET } );
-    }
-
-    void plantSEEK_LEFT() {
-        if ( DUMP ) std::cerr << "SEEK_LEFT" << std::endl;
-        program.push_back( { instruction_set.SEEK_LEFT } );
-    }
-
-    void plantSEEK_RIGHT() {
-        if ( DUMP ) std::cerr << "SEEK_RIGHT" << std::endl;
-        program.push_back( { instruction_set.SEEK_RIGHT } );
-    }
-
-    void plantMOVE( int n ) {
-        if ( n == 1 ) {
-            if ( DUMP ) std::cerr << "RIGHT" << std::endl;
-            program.push_back( { instruction_set.RIGHT } );
-        } else if ( n == -1 ) {
-            if ( DUMP ) std::cerr << "LEFT" << std::endl;
-            program.push_back( { instruction_set.LEFT } );
-        } else if ( n != 0 ) {
-            if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
-            program.push_back( { instruction_set.MOVE } );
-            program.push_back( { .operand=n } );
-        }
-    }
-
-    void plantADD( int n ) {
-        if ( n == 1 ) {
-            if ( DUMP ) std::cerr << "INCR" << std::endl;
-            program.push_back( { instruction_set.INCR } );
-        } else if ( n == -1 ) {
-            if ( DUMP ) std::cerr << "DECR" << std::endl;
-            program.push_back( { instruction_set.DECR } );
-        } else if ( n != 0 ) {
-            if ( DUMP ) std::cerr << "ADD " << n << std::endl;
-            program.push_back( { instruction_set.ADD } );
-            program.push_back( { .operand=n } );
-        }
-    }
-
-    int scanAdd( int n ) {
-        for (;;) {
-            if ( input.tryPop( '+' ) ) {
-                n += 1;
-            } else if ( input.tryPop( '-' ) ) {
-                n -= 1;
-            } else {
-                break;
-            }
-        }
-        return n;
-    }
-
-    int scanMove( int n ) {
-        for (;;) {
-            if ( input.tryPop( '>' ) ) {
-                n += 1;
-            } else if ( input.tryPop( '<' ) ) {
-                n -= 1;
-            } else {
-                break;
-            }
-        }
-        return n;
-    }
-
-    void plantADD_OFFSET( int32_t offset, int32_t by ) {
-        if ( DUMP ) std::cerr << "ADD_OFFSET offset=" << offset << " by=" << by << std::endl;
-        program.push_back( { instruction_set.ADD_OFFSET } );
-        struct Dyad d = { .operand1=offset, .operand2=by };
+    void plantDyad( const json & joperand ) {
+        int32_t high = joperand[ "High" ];
+        int32_t low = joperand[ "Low" ];
+        struct Dyad d = { .operand1=high, .operand2=low };
         program.push_back( { .dyad=d } );
     }
 
-    void plantXFR_MULTIPLE( int32_t offset, int32_t by ) {
-        if ( DUMP ) std::cerr << "XFR_MULTIPLE offset=" << offset << " by=" << by << std::endl;
-        program.push_back( { instruction_set.XFR_MULTIPLE } );
-        struct Dyad d = { .operand1=offset, .operand2=by };
-        program.push_back( { .dyad=d } );
+    void plantOperand( const json & joperand ) {
+        int64_t n = joperand[ "Operand" ];
+        program.push_back( { .operand=n } );
     }
 
-    void plantMoveAddMove( const MoveAddMove & mim ) {
-        if ( mim.by == 0 ) {
-            if ( mim.rhs == 0 ) {
-                plantMOVE( mim.lhs );
-            } else if ( mim.lhs == 0 ) {
-                const MoveAddMove nextmam = scanMoveAddMove( mim.rhs );
-                plantMoveAddMove( nextmam );
-            } else {
-                const MoveAddMove nextmam = scanMoveAddMove( mim.lhs + mim.rhs );
-                plantMoveAddMove( nextmam );
-            }
-        } else if (
-            ( mim.lhs != 0 && mim.rhs != 0 ) &&     
-            ( sgn( mim.lhs ) != sgn( mim.rhs ) ) //  And they have opposite signs
-        ) {
-            int abs_lhs = abs( mim.lhs ); 
-            int abs_rhs = abs( mim.rhs );
-            if ( abs_lhs == abs_rhs ) {
-                plantADD_OFFSET( mim.lhs, mim.by );
-            } else if ( abs_lhs > abs_rhs ) {
-                plantMOVE( sgn( mim.lhs ) * ( abs_lhs - abs_rhs ) );
-                plantADD_OFFSET( sgn( mim.lhs ) * abs_rhs, mim.by );
-            } else /* if ( abs_lhs < abs_rhs ) */ {
-                plantADD_OFFSET( mim.lhs, mim.by );
-                const MoveAddMove nextmam = scanMoveAddMove( sgn( mim.rhs ) * ( abs_rhs - abs_lhs ) );
-                plantMoveAddMove( nextmam );
-           }
-        } else {
-            plantMOVE( mim.lhs );
-            plantADD( mim.by );
-            const MoveAddMove nextmam = scanMoveAddMove( mim.rhs );
-            plantMoveAddMove( nextmam );
-        }
-    }
-
-    void plantSetZero() {
-        if ( DUMP ) std::cerr << "SET_ZERO" << std::endl;
-        program.push_back( { instruction_set.SET_ZERO } );
-    }
-
-    MoveAddMove scanMoveAddMove( int initial ) {
-        int move_lhs = scanMove( initial );
-        int n = scanAdd( 0 );
-        int move_rhs = scanMove( 0 );   
-        return MoveAddMove( move_lhs, n, move_rhs );
-    }
-
-    bool plantExpr() {
-        auto ch = input.pop();
-        return_unless( ch )( false );
-
-        switch ( *ch ) {
-            case '+':
-                plantADD( scanAdd( 1 ) );
-                break;
-            case '-':
-                plantADD( scanAdd( -1 ) );
-                break;
-            case '>':
-            case '<':
-                {
-                    MoveAddMove mim = scanMoveAddMove( ch == '>' ? 1 : -1 );
-                    plantMoveAddMove( mim );
-                }
-                break;
-            case '[':
-                {
-                    MoveAddMove mim = scanMoveAddMove( 0 );
-                    bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
-                    if ( bump && input.tryPop( ']' ) ) {
-                        plantSetZero();
-                    } else if ( mim.matches( 1, 0, 0 ) && input.tryPop( ']') ) {
-                        plantSEEK_RIGHT();
-                    } else if ( mim.matches( -1, 0, 0 ) && input.tryPop( ']') ) {
-                        plantSEEK_LEFT();
-                    } else if ( mim.isNonZeroBalanced() && input.tryPopString( "-]" ) ) {
-                        plantXFR_MULTIPLE( mim.lhs, mim.by );
-                    } else {
-                        plantOPEN();
-                        plantMoveAddMove( mim );
-                    }   
-                }
-                break;
-            case ']':
-                plantCLOSE();
-                break;
-            case '.':
-                plantPUT();
-                break;
-            case ',':
-                plantGET();
-                break;
-        }
-        return true;
+    void plantOpCode( const json & jopcode ) {
+        const std::string name = jopcode[ "OpCode" ];
+        OpCode opcode( instruction_set.byName( name ) );
+        program.push_back( { opcode } );
     }
 
 public:
     void plantProgram() {
-        while ( plantExpr() ) {}
+        std::ifstream input( filename.c_str(), std::ios::in );
+        json jprogram;
+        input >> jprogram;
+        for ( auto& i : jprogram ) {
+            if ( i.contains( "OpCode" ) ) {
+                plantOpCode( i );
+            } else if ( i.contains( "Operand" ) ) {
+                plantOperand( i );
+            } else if ( i.contains( "High" ) ) {
+                plantDyad( i );
+            }
+        }
         program.push_back( { instruction_set.HALT } );
     }
 };
@@ -434,7 +182,7 @@ public:
     {}
 
 public:
-    void runFile( std::string_view filename, bool header_needed ) {
+    void runFile( const std::string filename, bool header_needed ) {
         if ( header_needed ) {
             std::cerr << "# Executing: " << filename << std::endl;
         }
@@ -592,7 +340,7 @@ Each argument is the name of a Brainf*ck source file to be compiled into
 threaded coded and executed.
 */
 int main( int argc, char * argv[] ) {
-    const std::vector<std::string_view> args(argv + 1, argv + argc);
+    const std::vector<std::string> args(argv + 1, argv + argc);
     for (auto arg : args) {
         Engine engine;
         engine.runFile( arg, args.size() > 1 );
