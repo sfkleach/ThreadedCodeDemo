@@ -231,7 +231,7 @@ private:
         int end = program.size();
         int start = indexes.back();
         indexes.pop_back();
-        program[ start ] = end + 1;     //  Overwrite the dummy value.
+        program[ start ] = {{ "Operand", end + 1 }};     //  Overwrite the dummy value.
         plantOperand( start + 1 );
     }
 
