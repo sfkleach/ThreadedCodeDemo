@@ -39,3 +39,9 @@
 /direct_threading_demo
 /rust_threading_demo
 /subroutine_threading_demo
+/cisc_threading_demo.dSYM/Contents/Resources/DWARF/cisc_threading_demo
+/compiler_and_runner/cisc_compiler_demo.dSYM/Contents/Resources/DWARF/cisc_compiler_demo
+/compiler_and_runner/cisc_runner_demo.dSYM/Contents/Resources/DWARF/cisc_runner_demo
+/direct_threading_demo.dSYM/Contents/Resources/DWARF/direct_threading_demo
+/subroutine_threading_demo.dSYM/Contents/Resources/DWARF/subroutine_threading_demo
+*.plist

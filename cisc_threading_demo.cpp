@@ -12,7 +12,6 @@ We use Brainf*ck because it has very few instructions, which makes the crucial
 method (Engine::runFile) fit on a single screen.
 */
 
-
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -227,7 +226,7 @@ private:
         int start = indexes.back();
         indexes.pop_back();
         program[ start ].operand = end + 1;     //  Overwrite the dummy value.
-        program.push_back( { .operand={ start + 1 } } );
+        program.push_back( { .operand=( start + 1 ) } );
     }
 
     void plantPUT() {

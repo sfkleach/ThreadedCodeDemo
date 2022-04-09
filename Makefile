@@ -17,10 +17,11 @@ SHELL:=/bin/bash
 .DELETE_ON_ERROR:
 
 CC=g++
-CCFLAGS=-Wall -g -Og -std=c++17
+CCFLAGS=-Wall -Werror -g -Og -std=c++17
 
 .PHONY: all
 all: direct_threading_demo subroutine_threading_demo cisc_threading_demo
+	$(MAKE) -C compiler_and_runner all
 
 .PHONY: release
 release: CCFLAGS=-Wall -O3 -std=c++17
@@ -29,6 +30,7 @@ release: direct_threading_demo subroutine_threading_demo cisc_threading_demo
 .PHONY: clean
 clean:
 	rm -f direct_threading_demo subroutine_threading_demo cisc_threading_demo
+	$(MAKE) -C compiler_and_runner clean
 
 direct_threading_demo: direct_threading_demo.cpp
 	$(CC) $(CCFLAGS) -o $@ $^

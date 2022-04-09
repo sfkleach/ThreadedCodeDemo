@@ -51,7 +51,7 @@ private:
             int start = indexes.back();
             indexes.pop_back();
             program[ start ].operand = end + 1;
-            program.push_back( { .operand={ start + 1 } } );
+            program.push_back( { .operand=( start + 1 ) } );
         }
     }
 

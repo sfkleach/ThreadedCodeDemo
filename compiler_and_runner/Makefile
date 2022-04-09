@@ -17,7 +17,7 @@ SHELL:=/bin/bash
 .DELETE_ON_ERROR:
 
 CC=g++
-CCFLAGS=-Wall -g -Og -std=c++17
+CCFLAGS=-Wall -Werror -g -Og -std=c++17
 
 json.hpp:
 	curl --silent --show-error https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp > $@
@@ -37,6 +37,6 @@ release: cisc_runner_demo cisc_compiler_demo
 
 .PHONY: clean
 clean:
-	rm -f cisc_runner
+	rm -f cisc_runner_demo
 	rm -f cisc_compiler_demo
 	rm -f demo json.hpp
