@@ -23,10 +23,10 @@ json.hpp:
 	curl --silent --show-error https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp > $@
 
 cisc_runner_demo: cisc_runner_demo.cpp json.hpp
-	$(CC) $(CCFLAGS) -o $@ $^
+	$(CC) $(CCFLAGS) -o $@ $<
 
-cisc_compiler_demo: cisc_compiler_demo.cpp
-	$(CC) $(CCFLAGS) -o $@ $^
+cisc_compiler_demo: cisc_compiler_demo.cpp json.hpp
+	$(CC) $(CCFLAGS) -o $@ $<
 
 .PHONY: all
 all: cisc_runner_demo cisc_compiler_demo
