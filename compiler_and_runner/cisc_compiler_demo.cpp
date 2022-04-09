@@ -148,26 +148,27 @@ public:
 
 typedef struct OpCode {
     std::string name;
-    bool setZero;
+    bool locIsZero;
+    bool discardBeforeSetZero;
 } OpCode;
 
 typedef struct InstructionSet {
-    OpCode SET_ZERO = { "SET_ZERO", true };
-    OpCode INCR = { "INCR", false };
-    OpCode DECR = { "DECR", false };
-    OpCode ADD = { "ADD", false };
-    OpCode ADD_OFFSET = { "ADD_OFFSET", false };
-    OpCode XFR_MULTIPLE = { "XFR_MULTIPLE", false };
-    OpCode LEFT = { "LEFT", false };
-    OpCode RIGHT = { "RIGHT", false };
-    OpCode SEEK_LEFT = { "SEEK_LEFT", true };
-    OpCode SEEK_RIGHT = { "SEEK_RIGHT", true };
-    OpCode MOVE = { "MOVE", false };
-    OpCode OPEN = { "OPEN", false };
-    OpCode CLOSE = { "CLOSE", true };
-    OpCode GET = { "GET", false };
-    OpCode PUT = { "PUT", false };
-    OpCode HALT = { "HALT", false };
+    OpCode SET_ZERO = { "SET_ZERO", true, false };
+    OpCode INCR = { "INCR", false, true };
+    OpCode DECR = { "DECR", false, true };
+    OpCode ADD = { "ADD", false, true };
+    OpCode ADD_OFFSET = { "ADD_OFFSET", false, false };
+    OpCode XFR_MULTIPLE = { "XFR_MULTIPLE", false, false };
+    OpCode LEFT = { "LEFT", false, false };
+    OpCode RIGHT = { "RIGHT", false, false };
+    OpCode SEEK_LEFT = { "SEEK_LEFT", true, false };
+    OpCode SEEK_RIGHT = { "SEEK_RIGHT", true, false };
+    OpCode MOVE = { "MOVE", false, false };
+    OpCode OPEN = { "OPEN", false, false };
+    OpCode CLOSE = { "CLOSE", true, false };
+    OpCode GET = { "GET", false, false };
+    OpCode PUT = { "PUT", false, false };
+    OpCode HALT = { "HALT", false, false };
 } InstructionSet; 
 
 //  TODO: This should be moved to a chared header file.
@@ -176,19 +177,24 @@ const char * OPCODE = "OpCode";
 typedef struct CompileFlags {
     bool deadCodeRemoval = true;
     bool seekZero = true;
-    bool setZero = true;
+    bool locIsZero = true;
     bool xfrMultiple = true;
+    bool unplantSuperfluousCode = true;
 
     void setDeadCode( bool enabled ) {
         this->deadCodeRemoval = enabled;
+    }
+
+    void setUnplantSuperfluousCode( bool enabled ) {
+        this->unplantSuperfluousCode = enabled;
     }
 
     void setSeekZero( bool enabled ) {
         this->seekZero = enabled;
     }
 
-    void setSetZero( bool enabled ) {
-        this->setZero = enabled;
+    void setPruneWhenLocIsZero( bool enabled ) {
+        this->locIsZero = enabled;
     }
 
     void setXfrMultiple( bool enabled ) {
@@ -198,7 +204,7 @@ typedef struct CompileFlags {
     void setAll( bool enabled ) {
         this->setDeadCode( enabled );
         this->setSeekZero( enabled );
-        this->setSetZero( enabled );
+        this->setPruneWhenLocIsZero( enabled );
         this->setXfrMultiple( enabled );
     }
 
@@ -211,10 +217,12 @@ typedef struct CompileFlags {
             setDeadCode( enable );
         } else if ( arg == "--seekzero" ) {
             setSeekZero( enable );
-        } else if ( arg == "--setzero" ) {
-            setSetZero( enable );
+        } else if ( arg == "--prune-if-loc-is-zero" ) {
+            setPruneWhenLocIsZero( enable );
         } else if ( arg == "--xfrmultiple" ) {
             setXfrMultiple( enable );
+        } else if ( arg == "--superfluous" ) {
+            setUnplantSuperfluousCode( enable );
         } else {
             std::string prefix( "--no-" );
             if ( startsWith( arg, prefix ) ) {    //  is it a prefix?
@@ -260,13 +268,35 @@ public:
 
 private:
 
-    void plantOpCode( const OpCode & opcode ) {
-        program.push_back( {{ "OpCode", opcode.name }} );
-        this->loc_is_zero = opcode.setZero;
+    //  Any location manipulation ahead of a SET_ZERO is pointless; discard
+    //  it. Occurs in the sierpinski.bf example.
+    void unplantBeforeSetZero() {
+        for (;;) {
+            break_if( program.empty() );
+            json op = program.back();
+            break_if( not op.contains( "DiscardBeforeSetZero" ) );
+            program.erase(program.end() - 1);
+        }
     }
 
-    void plantOperand( int64_t n ) {
+    void plantOpCode( const OpCode & opcode ) {
+        program.push_back( {{ "OpCode", opcode.name }} );
+        this->loc_is_zero = opcode.locIsZero;
+        if ( opcode.discardBeforeSetZero ) {
+            program.back()[ "DiscardBeforeSetZero" ] = true;
+        }
+    }
+
+    void plantOperand( int64_t n, const OpCode & opcode ) {
         program.push_back( {{ "Operand", n }} );
+        if ( opcode.discardBeforeSetZero ) {
+            program.back()[ "DiscardBeforeSetZero" ] = true;
+        }
+    }
+
+    void plantOpCodeAndOperand( const OpCode & opcode, int64_t n ) {
+        plantOpCode( opcode );
+        plantOperand( n, opcode );
     }
 
     void plantDyad( int32_t hi, int32_t lo ) {
@@ -293,7 +323,7 @@ private:
         int start = indexes.back();
         indexes.pop_back();
         program[ start ] = {{ "Operand", end + 1 }};     //  Overwrite the dummy value.
-        plantOperand( start + 1 );
+        plantOperand( start + 1, instruction_set.CLOSE );
     }
 
     void plantPUT() {
@@ -325,8 +355,7 @@ private:
             plantOpCode( instruction_set.LEFT );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "MOVE " << n << std::endl;
-            plantOpCode( instruction_set.MOVE );
-            plantOperand( n );
+            plantOpCodeAndOperand( instruction_set.MOVE, n );
         }
     }
 
@@ -339,10 +368,11 @@ private:
             plantOpCode( instruction_set.DECR );
         } else if ( n != 0 ) {
             if ( DUMP ) std::cerr << "ADD " << n << std::endl;
-            plantOpCode( instruction_set.ADD );
-            plantOperand( n );
+            plantOpCodeAndOperand( instruction_set.ADD, n );
         }
     }
+
+
 
     int scanAdd( int n ) {
         for (;;) {
@@ -466,7 +496,8 @@ private:
                 } else {
                     MoveAddMove mim = scanMoveAddMove( 0 );
                     bool bump = mim.matches( 0, 1, 0 ) || mim.matches( 0, -1, 0 );
-                    if ( bump && flags.setZero && input.tryPop( ']' ) ) {
+                    if ( bump && flags.locIsZero && input.tryPop( ']' ) ) {
+                        unplantBeforeSetZero();
                         plantSetZero();
                     } else if ( flags.seekZero && mim.matches( 1, 0, 0 ) && input.tryPop( ']') ) {
                         plantSEEK_RIGHT();
