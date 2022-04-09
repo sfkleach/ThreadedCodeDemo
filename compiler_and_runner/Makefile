@@ -31,6 +31,10 @@ cisc_compiler_demo: cisc_compiler_demo.cpp json.hpp
 .PHONY: all
 all: cisc_runner_demo cisc_compiler_demo
 
+.PHONY: release
+release: CCFLAGS=-Wall -O3 -std=c++17
+release: cisc_runner_demo cisc_compiler_demo
+
 .PHONY: clean
 clean:
 	rm -f cisc_runner

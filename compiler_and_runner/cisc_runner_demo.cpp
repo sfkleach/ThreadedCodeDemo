@@ -332,9 +332,6 @@ public:
     }
 };
 
-#include "json.hpp"
-using namespace nlohmann;
-
 /*
 Each argument is the name of a Brainf*ck source file to be compiled into
 threaded coded and executed.
