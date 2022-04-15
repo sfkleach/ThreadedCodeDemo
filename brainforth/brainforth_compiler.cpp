@@ -44,7 +44,7 @@ typedef struct Token {
         SYMBOL,
         NAME
     } token_type = END_OF_INPUT;
-    char symbol;
+    char symbol = '\0';
     std::string name;
 
 public:
@@ -63,123 +63,104 @@ public:
             throw std::runtime_error( "Unimplemented" );
         }
     }
+
+    bool isSymbol( char ch ) const {
+        return this->token_type == SYMBOL && this->symbol == ch;
+    }
+
+    bool isntSymbol( char ch ) const {
+        return this->token_type != SYMBOL || this->symbol != ch;
+    }
 } Token;
 
 
 class PeekableProgramInput {
     std::istream& input;                //  The source code to be read in.
-    std::deque< char > buffer;
     std::deque< Token > tbuffer;
 public:
     PeekableProgramInput( std::istream& input ) :
         input( input )
     {}
+private:
+    Token fetchToken() {
+        if ( input.eof() ) {
+            return Token();
+        } else {
+            json jobj;
+            input >> jobj >> std::ws;
+            if ( jobj.contains( "symbol" ) ) {
+                Token t;
+                t.token_type = Token::SYMBOL;
+                t.symbol = jobj[ "symbol" ].get<std::string>()[ 0 ];
+                return t;
+            } else {
+                Token t;
+                t.token_type = Token::NAME;
+                t.symbol = 'A';
+                t.name = jobj[ "name" ].get<std::string>();
+                return t;
+            }
+        }        
+    }
+
 public:
     Token popToken() {
         if ( tbuffer.empty() ) {
-            if ( input.eof() ) {
-                return Token();
-            } else {
-                json jobj;
-                input >> jobj >> std::ws;
-                if ( jobj.contains( "symbol" ) ) {
-                    Token t;
-                    t.token_type = Token::SYMBOL;
-                    t.symbol = jobj[ "symbol" ].get<std::string>()[ 0 ];
-                    return t;
-                } else {
-                    Token t;
-                    t.token_type = Token::NAME;
-                    t.name = jobj[ "name" ].get<std::string>();
-                    return t;
-                }
-            }
+            return this->fetchToken();
         } else {
-            auto t = tbuffer.back();
-            tbuffer.pop_back();
+            auto t = tbuffer.front();
+            tbuffer.pop_front();
             return t;
         }
     }
-private:
-    std::optional<char> nextChar() {
-        for (;;) {
-            char ch = input.get();
-            if ( input.good() ) {
-                switch ( ch ) {
-                    case '?':
-                    case '!':
-                    case '>':
-                    case '<':
-                    case '+':
-                    case '-':
-                    case '.':
-                    case ',':
-                    case '[':
-                    case ']':
-                        return std::optional<char>( ch );
-                }
-            } else {
-                return std::nullopt;
-            }
-        }
-    }
+
 public:
-    std::optional<char> peekN( size_t n ) {
-        while ( this->buffer.size() <= n ) {
-            auto ch = nextChar();
-            return_unless( ch )( std::nullopt );
-            this->buffer.push_back( *ch );
+    Token peekN( size_t n ) {
+        while ( this->tbuffer.size() <= n ) {
+            auto tok = this->fetchToken();
+            return_if( tok.isEndOfInput() )( Token() );
+            this->tbuffer.push_back( tok );
         }
-        return this->buffer[ n ];
+        return this->tbuffer[ n ];
     }    
+
 public:
-    std::optional<char> peek() {
-        if ( this->buffer.empty() ) {
-            auto ch = nextChar();
-            if ( ch ) {
-                this->buffer.push_back( *ch );
-            }
-            return ch;
+    Token peekToken() {
+        if ( this->tbuffer.empty() ) {
+            auto tok = this->fetchToken();
+            this->tbuffer.push_back( tok );
+            return tok;
         } else {
-            return this->buffer.front();
+            return this->tbuffer.front();
         }
     }
-public:
-    std::optional<char> pop() {
-        if ( this->buffer.empty() ) {
-            return nextChar();
-        } else {
-            char ch = this->buffer.front();
-            this->buffer.pop_front();
-            return ch;
-        }
-    }
+
 private:
     void drop() {
-        if ( this->buffer.empty() ) {
-            input.get();
+        if ( this->tbuffer.empty() ) {
+            this->fetchToken();
         } else {
-            this->buffer.pop_front();
+            this->tbuffer.pop_front();
         }
     }
+
 public:
     bool tryPop( char ch ) {
-        if ( this->peek() == ch ) {
+        bool is_sym = this->peekToken().isSymbol( ch );
+        if ( is_sym ) {
             this->drop();
-            return true;
-        } else {
-            return false;
         }
+        return is_sym;
     }
 public:
     bool tryPopString( std::string str ) {
         int n = 0;
         for ( auto ch : str ) {
             auto actual = this->peekN( n );
-            return_if( actual != ch )( false );
+            return_if( actual.isntSymbol( ch ) )( false );
             n += 1;
         }
-        this->buffer.erase( this->buffer.begin(), this->buffer.begin() + n );
+        this->tbuffer.erase( this->tbuffer.begin(), this->tbuffer.begin() + n );
         return true;
     }
 };
@@ -364,8 +345,8 @@ private:
     }
 
     void plantOPEN() {
-        plantOpCode( instruction_set.OPEN );
         if ( DUMP ) std::cerr << "OPEN" << std::endl;
+        plantOpCode( instruction_set.OPEN );
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
@@ -528,10 +509,11 @@ private:
     }
 
     bool plantExpr() {
-        auto ch = input.pop();
-        return_unless( ch )( false );
+        auto tok = input.popToken();
+        return_if( tok.isEndOfInput() )( false );
+        char ch = tok.symbol;
 
-        switch ( *ch ) {
+        switch ( ch ) {
             case '+':
                 plantADD( scanAdd( 1 ) );
                 break;
@@ -547,7 +529,7 @@ private:
             case '>':
             case '<':
                 {
-                    MoveAddMove mim = scanMoveAddMove( ch == '>' ? 1 : -1 );
+                    MoveAddMove mim = scanMoveAddMove( tok.isSymbol('>') ? 1 : -1 );
                     plantMoveAddMove( mim );
                 }
                 break;
@@ -558,11 +540,13 @@ private:
                     //  programs. This enables us to delete the comment.
                     int nesting = 1;
                     for (;;) {
-                        ch = input.pop();
-                        break_unless( ch );
-                        if ( ch == '[' ) {
+                        tok = input.popToken();
+                        if ( tok.isEndOfInput() ) {
+                            throw std::runtime_error( "No matching brace" );
+                        }
+                        if ( tok.isSymbol('[') ) {
                             nesting += 1;
-                        } else if ( ch == ']' ) {
+                        } else if ( tok.isSymbol(']') ) {
                             nesting -= 1;
                         }
                         break_if( nesting == 0 );
@@ -613,20 +597,12 @@ int main( int argc, char * argv[] ) {
     std::vector<std::string> args(argv + 1, argv + argc);
     CompileFlags flags( args );
 
-    
-
     json program;
     const InstructionSet instruction_set;
+
     CodePlanter planter( flags, std::cin, instruction_set, program );
+    planter.plantProgram();
 
-    PeekableProgramInput input( std::cin );
-    for(;;) {
-        auto t = input.popToken();
-        break_if( t.isEndOfInput() );
-        std::cout << t.toString() << std::endl;
-    }
-
-    // planter.plantProgram();
-    // std::cout << program.dump(4) << std::endl;
+    std::cout << program.dump(4) << std::endl;
     exit( EXIT_SUCCESS );
 }
