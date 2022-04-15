@@ -18,6 +18,7 @@ using namespace nlohmann;
 
 //  Use this to turn on or off some debug-level tracing.
 #define DUMP 0
+#define MAIN_PROGRAM "main"
 
 //  Syntactic sugar to emphasise the 'break'.
 #define break_if( E ) if ( E ) break
@@ -70,6 +71,10 @@ public:
 
     bool isntSymbol( char ch ) const {
         return this->token_type != SYMBOL || this->symbol != ch;
+    }
+
+    bool isName() const {
+        return this->token_type == NAME;
     }
 } Token;
 
@@ -209,6 +214,8 @@ typedef struct InstructionSet {
     OpCode CLOSE = { "CLOSE", true, false };
     OpCode GET = { "GET", false, false };
     OpCode PUT = { "PUT", false, false };
+    OpCode CALL = { "CALL", false, false };
+    OpCode RETURN = { "RETURN", false, false };
     OpCode HALT = { "HALT", false, false };
 } InstructionSet; 
 
@@ -291,20 +298,23 @@ class CodePlanter {
     PeekableProgramInput input;         //  The source code to be read in, stripped of comment characters.
     bool loc_is_zero = true;            //  True if, at this point in the program, the current location is guaranteed to be zero.
     const InstructionSet & instruction_set;
-    json & program; 
+    std::map<std::string, json> & bindings; 
+    json * program;
     std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
+    std::vector<json *> dump;
     
 public:
     CodePlanter( 
         CompileFlags flags,
         std::istream& input_stream,
         const InstructionSet & instruction_set,
-        json& program 
+        std::map<std::string, json> & bindings 
     ) :
         flags( flags ),
         input( input_stream ),
         instruction_set( instruction_set ), 
-        program( program )
+        bindings( bindings ),
+        program( &bindings[MAIN_PROGRAM] )
     {}
 
 private:
@@ -313,25 +323,32 @@ private:
     //  it. Occurs in the sierpinski.bf example.
     void unplantBeforeSetZero() {
         for (;;) {
-            break_if( program.empty() );
-            json op = program.back();
+            break_if( program->empty() );
+            json op = program->back();
             break_if( not op.contains( "DiscardBeforeSetZero" ) );
-            program.erase(program.end() - 1);
+            program->erase(program->end() - 1);
         }
     }
 
     void plantOpCode( const OpCode & opcode ) {
-        program.push_back( {{ "OpCode", opcode.name }} );
+        program->push_back( {{ "OpCode", opcode.name }} );
         this->loc_is_zero = opcode.locIsZero;
         if ( opcode.discardBeforeSetZero ) {
-            program.back()[ "DiscardBeforeSetZero" ] = true;
+            program->back()[ "DiscardBeforeSetZero" ] = true;
         }
     }
 
     void plantOperand( int64_t n, const OpCode & opcode ) {
-        program.push_back( {{ "Operand", n }} );
+        program->push_back( {{ "Operand", n }} );
         if ( opcode.discardBeforeSetZero ) {
-            program.back()[ "DiscardBeforeSetZero" ] = true;
+            program->back()[ "DiscardBeforeSetZero" ] = true;
+        }
+    }
+
+    void plantOperand( const std::string & name, const OpCode & opcode ) {
+        program->push_back( {{ "Operand", name }} );
+        if ( opcode.discardBeforeSetZero ) {
+            program->back()[ "DiscardBeforeSetZero" ] = true;
         }
     }
 
@@ -340,8 +357,13 @@ private:
         plantOperand( n, opcode );
     }
 
+    void plantOpCodeAndOperand( const OpCode & opcode, const std::string & name ) {
+        plantOpCode( opcode );
+        plantOperand( name, opcode );
+    }
+
     void plantDyad( int32_t hi, int32_t lo ) {
-        program.push_back( { { "High", hi }, { "Low", lo } } );
+        program->push_back( { { "High", hi }, { "Low", lo } } );
     }
 
     void plantOPEN() {
@@ -350,8 +372,8 @@ private:
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
-        indexes.push_back( program.size() );
-        program.push_back( nullptr );         //  Dummy value, will be overwritten.
+        indexes.push_back( program->size() );
+        program->push_back( nullptr );         //  Dummy value, will be overwritten.
     }
 
     void plantCLOSE() {
@@ -360,7 +382,7 @@ private:
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
-        int end = program.size();
+        int end = program->size();
         int start = indexes.back();
         indexes.pop_back();
         program[ start ] = {{ "Operand", end + 1 }};     //  Overwrite the dummy value.
@@ -508,6 +530,10 @@ private:
         return MoveAddMove( move_lhs, n, move_rhs );
     }
 
+    void plantCALL( const std::string & name ) {
+        plantOpCodeAndOperand( instruction_set.CALL, name );
+    }
+
     bool plantExpr() {
         auto tok = input.popToken();
         return_if( tok.isEndOfInput() )( false );
@@ -578,6 +604,27 @@ private:
             case ',':
                 plantGET();
                 break;
+            case ':':
+                //  The next token must be a name.
+                tok = input.popToken();
+                if ( tok.isName() ) {
+                    this->dump.push_back( program );
+                    program = &this->bindings[ tok.name ];
+                } else {
+                    throw std::runtime_error( "Unexpected token following ':' (" + tok.toString() + ")" );
+                }
+                break;
+            case ';':
+                plantOpCode( instruction_set.RETURN );
+                program = this->dump.back();
+                this->dump.pop_back();
+                break;
+            case 'A':
+                std::cerr << "NAME " << tok.toString() << std::endl;
+                plantCALL( tok.name );                
+                break;
+            default:
+                throw std::runtime_error( "Unhandled opcode: " + tok.toString() );
         }
         return true;
     }
@@ -597,12 +644,15 @@ int main( int argc, char * argv[] ) {
     std::vector<std::string> args(argv + 1, argv + argc);
     CompileFlags flags( args );
 
-    json program;
+    std::map<std::string, json> bindings;
     const InstructionSet instruction_set;
 
-    CodePlanter planter( flags, std::cin, instruction_set, program );
+    CodePlanter planter( flags, std::cin, instruction_set, bindings );
     planter.plantProgram();
 
-    std::cout << program.dump(4) << std::endl;
+    json main = bindings;
+
+
+    std::cout << main.dump(4) << std::endl;
     exit( EXIT_SUCCESS );
 }

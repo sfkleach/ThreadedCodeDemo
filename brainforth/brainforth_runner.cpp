@@ -81,6 +81,8 @@ typedef struct InstructionSet {
     OpCode CLOSE;
     OpCode GET;
     OpCode PUT;
+    OpCode CALL;
+    OpCode RETURN;
     OpCode HALT;
 public:
     OpCode byName( const std::string & name ) const {
@@ -102,6 +104,8 @@ public:
             case hash( "CLOSE" ): return CLOSE;
             case hash( "GET" ): return GET;
             case hash( "PUT" ): return PUT;
+            case hash( "CALL" ): return CALL;
+            case hash( "RETURN" ): return RETURN;
             case hash( "HALT" ): return HALT;
         };
         throw std::runtime_error( "Unrecognised opcode: " + name );
@@ -115,34 +119,41 @@ public:
 class CodePlanter {
     const std::string filename;  
     const InstructionSet & instruction_set;
-    std::vector<Instruction> & program; 
+    std::map<std::string, std::vector<Instruction>> & bindings; 
+    std::vector< std::tuple< std::string, size_t, std::string > > backfill_list;
 
 public:
     CodePlanter( 
         const std::string filename,
         const InstructionSet & instruction_set,
-        std::vector<Instruction> & program 
+        std::map<std::string, std::vector<Instruction>> & bindings 
     ) :
         filename( filename ),
         instruction_set( instruction_set ), 
-        program( program )
+        bindings( bindings )
     {}
 
 private:
 
-    void plantDyad( const json & joperand ) {
+    void plantDyad( const json & joperand, const std::vector< Instruction > & program ) {
         int32_t high = joperand[ "High" ];
         int32_t low = joperand[ "Low" ];
         struct Dyad d = { .operand1=high, .operand2=low };
         program.push_back( { .dyad=d } );
     }
 
-    void plantOperand( const json & joperand ) {
+    void plantOperand( const json & joperand, const std::vector< Instruction > & program ) {
         int64_t n = joperand[ "Operand" ];
         program.push_back( { .operand=n } );
     }
 
-    void plantOpCode( const json & jopcode ) {
+    void plantReference( const json & joperand, const std::vector< Instruction > & program, const std::string & enclosing ) {
+        std::string name = joperand[ "Reference" ];
+        program.push_back( { .operand=0 } );    //  Insert placeholder.
+        backfill.push_back( { enclosing, program.size() - 1, name } );
+    }
+
+    void plantOpCode( const json & jopcode, const std::vector< Instruction > & program ) {
         const std::string name = jopcode[ "OpCode" ];
         OpCode opcode( instruction_set.byName( name ) );
         program.push_back( { opcode } );
@@ -153,16 +164,23 @@ public:
         std::ifstream input( filename.c_str(), std::ios::in );
         json jprogram;
         input >> jprogram;
-        for ( auto& i : jprogram ) {
-            if ( i.contains( "OpCode" ) ) {
-                plantOpCode( i );
-            } else if ( i.contains( "Operand" ) ) {
-                plantOperand( i );
-            } else if ( i.contains( "High" ) ) {
-                plantDyad( i );
+        for ( auto & [name, jcode] : jprogram.items() ) {
+            this->bindings[ name ] = std::vector();
+        }
+        for ( auto & [name, jcode] : jprogram.items() ) {
+            std::vector< Instruction > & program = this->bindings[ name ];
+            for ( auto & i : jcode ) {
+                if ( i.contains( "OpCode" ) ) {
+                    plantOpCode( i, program );
+                } else if ( i.contains( "Operand" ) ) {
+                    plantOperand( i, program );
+                } else if ( i.contains( "High" ) ) {
+                    plantDyad( i, program );
+                } else if ( i.contains( "Ref" ) ) {
+                    plantReference( i, program, name );
+                }
             }
         }
-        program.push_back( { instruction_set.HALT } );
     }
 };
 
@@ -171,7 +189,7 @@ typedef unsigned char num;
 class Engine {
     std::map<char, OpCode> opcode_map;
     std::map<std::string, OpCode> extra_opcodes_map;
-    std::vector<Instruction> program;
+    std::map<std::string, std::vector<Instruction>> bindings;
     std::vector<num> memory;
 public:
     Engine() : 
@@ -202,14 +220,16 @@ public:
         instruction_set.XFR_MULTIPLE = &&XFR_MULTIPLE;
         instruction_set.SEEK_LEFT = &&SEEK_LEFT;
         instruction_set.SEEK_RIGHT = &&SEEK_RIGHT;
+        instruction_set.CALL = &&CALL;
+        instruction_set.RETURN = &&RETURN;
         instruction_set.HALT = &&HALT;
         
-        CodePlanter planter( filename, instruction_set, program );
+        CodePlanter planter( filename, instruction_set, bindings );
         planter.plantProgram();
 
         std::noskipws( std::cin );
 
-        auto program_data = program.data();
+        auto program_data = bindings["main"].data();
         Instruction * pc = &program_data[0];
         num * loc = &memory.data()[0];
         std::vector< num > data_stack( 30000 );
@@ -332,6 +352,10 @@ public:
                 loc += 1;
             }
         }
+        goto *(pc++->opcode);
+    CALL:
+        goto *(pc++->opcode);
+    RETURN:
         goto *(pc++->opcode);
     HALT:
         if ( DEBUG ) std::cout << "DONE!" << std::endl;

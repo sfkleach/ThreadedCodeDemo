@@ -64,6 +64,8 @@ private:
                     case ',':
                     case '[':
                     case ']':
+                    case ':':
+                    case ';':
                         return std::optional<char>( ch );
                     default:
                         return std::optional<char>( isalnum( ch ) ? ch : ' ' );
@@ -85,6 +87,7 @@ public:
             return this->buffer.front();
         }
     }
+
 public:
     std::optional<char> pop() {
         if ( this->buffer.empty() ) {
@@ -95,6 +98,7 @@ public:
             return ch;
         }
     }
+
 private:
     void drop() {
         if ( this->buffer.empty() ) {
@@ -103,26 +107,7 @@ private:
             this->buffer.pop_front();
         }
     }
-// public:
-//     bool tryPop( char ch ) {
-//         if ( this->peek() == ch ) {
-//             this->drop();
-//             return true;
-//         } else {
-//             return false;
-//         }
-//     }
-// public:
-//     bool tryPopString( std::string str ) {
-//         int n = 0;
-//         for ( auto ch : str ) {
-//             auto actual = this->peekN( n );
-//             return_if( actual != ch )( false );
-//             n += 1;
-//         }
-//         this->buffer.erase( this->buffer.begin(), this->buffer.begin() + n );
-//         return true;
-//     }
+
 private:
     void scanName() {
         for (;;) {
@@ -132,6 +117,7 @@ private:
             this->drop();
         }
     }
+
 public:
     std::optional<json> nextJToken() {
         this->token.clear();
