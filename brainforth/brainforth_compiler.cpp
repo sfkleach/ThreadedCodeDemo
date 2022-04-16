@@ -389,15 +389,16 @@ private:
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
-        int end = program->size();
-        int start = indexes->back();
+        size_t end = program->size();
+        size_t start = indexes->back();
+        size_t delta = end - start;
         if ( (*program)[ start ] != nullptr ) {
             std::string j = (*program)[start];
             throw std::runtime_error( "Patch on CLOSE " + j );
         }
         indexes->pop_back();
-        (*program)[ start ] = {{ OPERAND, end + 1 }};     //  Overwrite the dummy value.
-        plantOperand( start + 1, instruction_set.CLOSE );
+        (*program)[ start ] = {{ OPERAND, delta }};     //  Overwrite the dummy value.
+        plantOperand( -delta, instruction_set.CLOSE );
     }
 
     void plantPUT() {
