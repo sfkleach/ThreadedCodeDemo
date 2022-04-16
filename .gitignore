@@ -45,3 +45,10 @@
 /direct_threading_demo.dSYM/Contents/Resources/DWARF/direct_threading_demo
 /subroutine_threading_demo.dSYM/Contents/Resources/DWARF/subroutine_threading_demo
 *.plist
+*.dSYM/
+/brainforth/brainforth_compiler
+/brainforth/brainforth_runner
+/brainforth/brainforth_tokeniser
+*.bf.json
+/brainforth/json.hpp
+/compiler_and_runner/json.hpp
