@@ -336,7 +336,7 @@ public:
         {
             int n = pc++->operand;
             if ( *loc == 0 ) {
-                pc = &program_data[n];
+                pc += n;
             }
             goto *(pc++->opcode);
         }
@@ -345,7 +345,7 @@ public:
         {
             int n = pc++->operand;
             if ( *loc != 0 ) {
-                pc = &program_data[n];
+                pc += n;
             }
             goto *(pc++->opcode);
         }
@@ -392,6 +392,7 @@ public:
         goto *(pc++->opcode);
     SAVE:
         call_stack.push_back( { .saved_location = { .saved = *loc, .location = loc } } );
+        *loc = 0;
         goto *(pc++->opcode);
     RESTORE:
         call_stack.back().saved_location.restore();
