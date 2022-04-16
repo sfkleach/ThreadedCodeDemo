@@ -215,7 +215,7 @@ typedef struct InstructionSet {
     OpCode GET = { "GET", false, false };
     OpCode PUT = { "PUT", false, false };
     OpCode CALL = { "CALL", false, false };
-    OpCode SAVE = { "SAVE", false, false };
+    OpCode SAVE = { "SAVE", true, false };
     OpCode RESTORE = { "RESTORE", false, false };
     OpCode RETURN = { "RETURN", false, false };
     OpCode HALT = { "HALT", false, false };
