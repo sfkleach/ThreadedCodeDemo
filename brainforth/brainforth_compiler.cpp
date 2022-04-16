@@ -11,6 +11,7 @@ code from its execution. We introduce an intermediate JSON format.
 #include <stdexcept>
 #include <deque>
 #include <cstdlib>
+#include <memory>
 
 #include "json.hpp"
 
@@ -78,7 +79,6 @@ public:
     }
 } Token;
 
-
 class PeekableProgramInput {
     std::istream& input;                //  The source code to be read in.
     std::deque< Token > tbuffer;
@@ -105,7 +105,7 @@ private:
                 t.name = jobj[ "name" ].get<std::string>();
                 return t;
             }
-        }        
+        }      
     }
 
 public:
@@ -123,7 +123,7 @@ public:
     Token peekN( size_t n ) {
         while ( this->tbuffer.size() <= n ) {
             auto tok = this->fetchToken();
-            return_if( tok.isEndOfInput() )( Token() );
+            return_if( tok.isEndOfInput() )( tok );
             this->tbuffer.push_back( tok );
         }
         return this->tbuffer[ n ];
@@ -158,8 +158,8 @@ public:
         return is_sym;
     }
 public:
-    bool tryPopString( std::string str ) {
-        int n = 0;
+    bool tryPopString( std::string str ) { 
+        int n = 1;
         for ( auto ch : str ) {
             auto actual = this->peekN( n );
             return_if( actual.isntSymbol( ch ) )( false );
@@ -215,12 +215,18 @@ typedef struct InstructionSet {
     OpCode GET = { "GET", false, false };
     OpCode PUT = { "PUT", false, false };
     OpCode CALL = { "CALL", false, false };
+    OpCode SAVE = { "SAVE", false, false };
+    OpCode RESTORE = { "RESTORE", false, false };
     OpCode RETURN = { "RETURN", false, false };
     OpCode HALT = { "HALT", false, false };
 } InstructionSet; 
 
-//  TODO: This should be moved to a chared header file.
+//  TODO: These should be moved to a shared header file.
 const char * OPCODE = "OpCode";
+const char * OPERAND = "Operand";
+const char * REF = "Ref";
+const char * HIGH = "High";
+const char * LOW = "Low";
 
 typedef struct CompileFlags {
     bool deadCodeRemoval = true;
@@ -300,8 +306,8 @@ class CodePlanter {
     const InstructionSet & instruction_set;
     std::map<std::string, json> & bindings; 
     json * program;
-    std::vector<int> indexes;           //  Responsible for managing [ ... ] loops.
-    std::vector<json *> dump;
+    std::shared_ptr< std::vector<int> > indexes;           //  Responsible for managing [ ... ] loops.
+    std::vector<std::tuple<std::shared_ptr<std::vector<int>>, json *>> dump;
     
 public:
     CodePlanter( 
@@ -314,7 +320,8 @@ public:
         input( input_stream ),
         instruction_set( instruction_set ), 
         bindings( bindings ),
-        program( &bindings[MAIN_PROGRAM] )
+        program( &bindings[MAIN_PROGRAM] ),
+        indexes( std::make_shared< std::vector<int> >() )
     {}
 
 private:
@@ -331,7 +338,7 @@ private:
     }
 
     void plantOpCode( const OpCode & opcode ) {
-        program->push_back( {{ "OpCode", opcode.name }} );
+        program->push_back( {{ OPCODE, opcode.name }} );
         this->loc_is_zero = opcode.locIsZero;
         if ( opcode.discardBeforeSetZero ) {
             program->back()[ "DiscardBeforeSetZero" ] = true;
@@ -339,14 +346,14 @@ private:
     }
 
     void plantOperand( int64_t n, const OpCode & opcode ) {
-        program->push_back( {{ "Operand", n }} );
+        program->push_back( {{ OPERAND, n }} );
         if ( opcode.discardBeforeSetZero ) {
             program->back()[ "DiscardBeforeSetZero" ] = true;
         }
     }
 
-    void plantOperand( const std::string & name, const OpCode & opcode ) {
-        program->push_back( {{ "Operand", name }} );
+    void plantRef( const std::string & name, const OpCode & opcode ) {
+        program->push_back( {{ REF, name }} );
         if ( opcode.discardBeforeSetZero ) {
             program->back()[ "DiscardBeforeSetZero" ] = true;
         }
@@ -357,13 +364,13 @@ private:
         plantOperand( n, opcode );
     }
 
-    void plantOpCodeAndOperand( const OpCode & opcode, const std::string & name ) {
+    void plantOpCodeAndRef( const OpCode & opcode, const std::string & name ) {
         plantOpCode( opcode );
-        plantOperand( name, opcode );
+        plantRef( name, opcode );
     }
 
     void plantDyad( int32_t hi, int32_t lo ) {
-        program->push_back( { { "High", hi }, { "Low", lo } } );
+        program->push_back( { { HIGH, hi }, { LOW, lo } } );
     }
 
     void plantOPEN() {
@@ -372,7 +379,7 @@ private:
         //  If we are dealing with loops, we plant the absolute index of the
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
-        indexes.push_back( program->size() );
+        indexes->push_back( program->size() );
         program->push_back( nullptr );         //  Dummy value, will be overwritten.
     }
 
@@ -383,9 +390,13 @@ private:
         //  operation in the program we want to jump to. This can be improved
         //  fairly easily.
         int end = program->size();
-        int start = indexes.back();
-        indexes.pop_back();
-        program[ start ] = {{ "Operand", end + 1 }};     //  Overwrite the dummy value.
+        int start = indexes->back();
+        if ( (*program)[ start ] != nullptr ) {
+            std::string j = (*program)[start];
+            throw std::runtime_error( "Patch on CLOSE " + j );
+        }
+        indexes->pop_back();
+        (*program)[ start ] = {{ OPERAND, end + 1 }};     //  Overwrite the dummy value.
         plantOperand( start + 1, instruction_set.CLOSE );
     }
 
@@ -531,7 +542,15 @@ private:
     }
 
     void plantCALL( const std::string & name ) {
-        plantOpCodeAndOperand( instruction_set.CALL, name );
+        plantOpCodeAndRef( instruction_set.CALL, name );
+    }
+
+    void plantSAVE() {
+        plantOpCode( instruction_set.SAVE );
+    }
+
+    void plantRESTORE() {
+        plantOpCode( instruction_set.RESTORE );
     }
 
     bool plantExpr() {
@@ -604,23 +623,30 @@ private:
             case ',':
                 plantGET();
                 break;
+            case '$':
+                plantSAVE();
+                break;
+            case '#':
+                plantRESTORE();
+                break;
             case ':':
                 //  The next token must be a name.
                 tok = input.popToken();
                 if ( tok.isName() ) {
-                    this->dump.push_back( program );
+                    this->dump.push_back( { indexes, program } );
                     program = &this->bindings[ tok.name ];
+                    indexes = std::make_shared< std::vector<int> >();
                 } else {
                     throw std::runtime_error( "Unexpected token following ':' (" + tok.toString() + ")" );
                 }
                 break;
             case ';':
                 plantOpCode( instruction_set.RETURN );
-                program = this->dump.back();
+                std::tie( indexes, program ) = this->dump.back();
                 this->dump.pop_back();
                 break;
             case 'A':
-                std::cerr << "NAME " << tok.toString() << std::endl;
+                // std::cerr << "NAME " << tok.toString() << std::endl;
                 plantCALL( tok.name );                
                 break;
             default:
@@ -637,7 +663,7 @@ public:
 };
 
 /*
-Compiles Brainf*ck code on the standard input into a JSON array of 
+Compiles Brainforth code on the standard input into a JSON array of 
 CISC instructions.
 */
 int main( int argc, char * argv[] ) {
@@ -650,9 +676,14 @@ int main( int argc, char * argv[] ) {
     CodePlanter planter( flags, std::cin, instruction_set, bindings );
     planter.plantProgram();
 
+    for ( auto & [ name, code ] : bindings ) {
+        for ( auto & i : code ) {
+            i.erase( "DiscardBeforeSetZero" );
+        }
+    }
+
     json main = bindings;
 
-
     std::cout << main.dump(4) << std::endl;
-    exit( EXIT_SUCCESS );
+    return( EXIT_SUCCESS );
 }

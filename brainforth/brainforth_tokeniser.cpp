@@ -66,6 +66,8 @@ private:
                     case ']':
                     case ':':
                     case ';':
+                    case '#':
+                    case '$':
                         return std::optional<char>( ch );
                     default:
                         return std::optional<char>( isalnum( ch ) ? ch : ' ' );

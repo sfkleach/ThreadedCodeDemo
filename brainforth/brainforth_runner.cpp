@@ -53,6 +53,7 @@ typedef union {
     OpCode opcode;
     int64_t operand;
     Dyad dyad;
+    void * reference;
 } Instruction;
 
 //  Horrible hack to more-or-less switch on string-literals.
@@ -81,6 +82,8 @@ typedef struct InstructionSet {
     OpCode CLOSE;
     OpCode GET;
     OpCode PUT;
+    OpCode SAVE;
+    OpCode RESTORE;
     OpCode CALL;
     OpCode RETURN;
     OpCode HALT;
@@ -105,6 +108,8 @@ public:
             case hash( "GET" ): return GET;
             case hash( "PUT" ): return PUT;
             case hash( "CALL" ): return CALL;
+            case hash( "SAVE" ): return SAVE;
+            case hash( "RESTORE" ): return RESTORE;
             case hash( "RETURN" ): return RETURN;
             case hash( "HALT" ): return HALT;
         };
@@ -120,7 +125,7 @@ class CodePlanter {
     const std::string filename;  
     const InstructionSet & instruction_set;
     std::map<std::string, std::vector<Instruction>> & bindings; 
-    std::vector< std::tuple< std::string, size_t, std::string > > backfill_list;
+    std::vector< std::tuple< std::string, size_t, std::string > > backfill;
 
 public:
     CodePlanter( 
@@ -135,25 +140,25 @@ public:
 
 private:
 
-    void plantDyad( const json & joperand, const std::vector< Instruction > & program ) {
+    void plantDyad( const json & joperand, std::vector< Instruction > & program ) {
         int32_t high = joperand[ "High" ];
         int32_t low = joperand[ "Low" ];
         struct Dyad d = { .operand1=high, .operand2=low };
         program.push_back( { .dyad=d } );
     }
 
-    void plantOperand( const json & joperand, const std::vector< Instruction > & program ) {
+    void plantOperand( const json & joperand, std::vector< Instruction > & program ) {
         int64_t n = joperand[ "Operand" ];
         program.push_back( { .operand=n } );
     }
 
-    void plantReference( const json & joperand, const std::vector< Instruction > & program, const std::string & enclosing ) {
-        std::string name = joperand[ "Reference" ];
+    void plantReference( const json & joperand, std::vector< Instruction > & program, const std::string & enclosing ) {
+        std::string name = joperand[ "Ref" ];
         program.push_back( { .operand=0 } );    //  Insert placeholder.
         backfill.push_back( { enclosing, program.size() - 1, name } );
     }
 
-    void plantOpCode( const json & jopcode, const std::vector< Instruction > & program ) {
+    void plantOpCode( const json & jopcode, std::vector< Instruction > & program ) {
         const std::string name = jopcode[ "OpCode" ];
         OpCode opcode( instruction_set.byName( name ) );
         program.push_back( { opcode } );
@@ -164,12 +169,15 @@ public:
         std::ifstream input( filename.c_str(), std::ios::in );
         json jprogram;
         input >> jprogram;
+        //  Ensure the bindings map is filled up - we don't want anything moving.
         for ( auto & [name, jcode] : jprogram.items() ) {
-            this->bindings[ name ] = std::vector();
+            this->bindings[ name ] = std::vector<Instruction>();
         }
+        //  Now populate the individual bindings - collecting up references to backfill.
         for ( auto & [name, jcode] : jprogram.items() ) {
             std::vector< Instruction > & program = this->bindings[ name ];
             for ( auto & i : jcode ) {
+                // std::cerr << "Code: " << i << std::endl;
                 if ( i.contains( "OpCode" ) ) {
                     plantOpCode( i, program );
                 } else if ( i.contains( "Operand" ) ) {
@@ -181,10 +189,27 @@ public:
                 }
             }
         }
+        //  Now backfill the references.
+        for ( auto & [ enclosing, index, refname ] : backfill ) {
+            this->bindings[ enclosing ][ index ].reference = this->bindings[ refname ].data();
+        }
     }
 };
 
 typedef unsigned char num;
+
+typedef union CallStackSlot {
+    Instruction * return_address;
+    struct SavedLocation {
+        num saved;
+        num * location;
+
+    public:
+        void restore() {
+            *location = saved;
+        }
+    } saved_location;
+} CallStackSlot;
 
 class Engine {
     std::map<char, OpCode> opcode_map;
@@ -222,6 +247,8 @@ public:
         instruction_set.SEEK_RIGHT = &&SEEK_RIGHT;
         instruction_set.CALL = &&CALL;
         instruction_set.RETURN = &&RETURN;
+        instruction_set.SAVE = &&SAVE;
+        instruction_set.RESTORE = &&RESTORE;
         instruction_set.HALT = &&HALT;
         
         CodePlanter planter( filename, instruction_set, bindings );
@@ -234,6 +261,7 @@ public:
         num * loc = &memory.data()[0];
         std::vector< num > data_stack( 30000 );
         num * stack = &data_stack.data()[ 0 ];
+        std::vector< CallStackSlot > call_stack;
         goto *(pc++->opcode);
 
         ////////////////////////////////////////////////////////////////////////
@@ -354,8 +382,20 @@ public:
         }
         goto *(pc++->opcode);
     CALL:
+        Instruction * nextpc = static_cast< Instruction * >( (pc++)->reference );
+        call_stack.push_back( { .return_address = pc } );
+        pc = nextpc;
         goto *(pc++->opcode);
     RETURN:
+        pc = call_stack.back().return_address;
+        call_stack.pop_back();
+        goto *(pc++->opcode);
+    SAVE:
+        call_stack.push_back( { .saved_location = { .saved = *loc, .location = loc } } );
+        goto *(pc++->opcode);
+    RESTORE:
+        call_stack.back().saved_location.restore();
+        call_stack.pop_back();
         goto *(pc++->opcode);
     HALT:
         if ( DEBUG ) std::cout << "DONE!" << std::endl;
