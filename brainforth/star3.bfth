@@ -1,0 +1,8 @@
+(  Here's how to add the top two numbers on the stack )
+:42 $>$< >+++++++[<++++++>-] <? ## ;
+
+( And here's another to push 10 onto the stack )
+:10 $>$< >+++++[<++>-] <? ## ;
+
+( So this is a way of printing 3 asterisks followed by a newline )
+42 ! . . . 10 ! .

@@ -50,27 +50,42 @@ public:
     {}
 private:
     std::optional<char> getChar() {
+        int comment_nesting = 0;
         for (;;) {
             char ch = input.get();
             if ( input.good() ) {
-                switch ( ch ) {
-                    case '?':
-                    case '!':
-                    case '>':
-                    case '<':
-                    case '+':
-                    case '-':
-                    case '.':
-                    case ',':
-                    case '[':
-                    case ']':
-                    case ':':
-                    case ';':
-                    case '#':
-                    case '$':
-                        return std::optional<char>( ch );
-                    default:
-                        return std::optional<char>( isalnum( ch ) ? ch : ' ' );
+                if ( comment_nesting > 0 ) {
+                    switch ( ch ) {
+                        case '(':
+                            comment_nesting += 1;
+                            break;
+                        case ')':
+                            comment_nesting -= 1;
+                            break;
+                    }
+                } else { 
+                    switch ( ch ) {
+                        case '?':
+                        case '!':
+                        case '>':
+                        case '<':
+                        case '+':
+                        case '-':
+                        case '.':
+                        case ',':
+                        case '[':
+                        case ']':
+                        case ':':
+                        case ';':
+                        case '#':
+                        case '$':
+                            return std::optional<char>( ch );
+                        case '(':
+                            comment_nesting += 1;
+                            break;
+                        default:
+                            return std::optional<char>( isalnum( ch ) ? ch : ' ' );
+                    }
                 }
             } else {
                 return std::nullopt;
