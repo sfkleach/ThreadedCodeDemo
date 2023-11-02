@@ -155,7 +155,7 @@ fn main() -> Result< (), std::io::Error > {
         let mut e = Engine {
             program: [ InstructionField { operand: 0 }; MEMORY_SIZE ],
             pc: 0,
-            memory : [ 0; 30000 ],
+            memory : [ 0; MEMORY_SIZE ],
             loc: 0
         };
         load_program_from_file( &arg, &mut e.program, &opcode_map )?;
