@@ -25,32 +25,32 @@ struct Engine {
 }
 
 #[allow(non_snake_case)]
-fn INCR( mut e : &mut Engine ) {
+fn INCR( e : &mut Engine ) {
     e.memory[ e.loc ] += 1;
     e.pc += 1;
 }
 
 #[allow(non_snake_case)]
-fn DECR( mut e : &mut Engine ) {
+fn DECR( e : &mut Engine ) {
     // e.memory[ e.loc ] = e.memory[ e.loc ].saturating_sub( 1 );
     e.memory[ e.loc ] -= 1;
     e.pc += 1;
 }
 
 #[allow(non_snake_case)]
-fn RIGHT( mut e : &mut Engine ) {
+fn RIGHT( e : &mut Engine ) {
     e.loc += 1;
     e.pc += 1;
 }
 
 #[allow(non_snake_case)]
-fn LEFT( mut e : &mut Engine ) {
+fn LEFT( e : &mut Engine ) {
     e.loc -= 1;
     e.pc += 1;
 }
 
 #[allow(non_snake_case)]
-fn OPEN( mut e : &mut Engine ) {
+fn OPEN( e : &mut Engine ) {
     if e.memory[ e.loc ] == 0 {
         unsafe {
             e.pc = e.program[ e.pc + 1 ].operand;
@@ -61,7 +61,7 @@ fn OPEN( mut e : &mut Engine ) {
 }
 
 #[allow(non_snake_case)]
-fn CLOSE( mut e : &mut Engine ) {
+fn CLOSE( e : &mut Engine ) {
     if e.memory[ e.loc ] != 0 {
         unsafe {
             e.pc = e.program[ e.pc + 1 ].operand;
